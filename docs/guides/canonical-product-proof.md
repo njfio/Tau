@@ -93,7 +93,9 @@ TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-l
 ```
 
 By default the script uses `openai/gpt-4.1-mini` with API-key auth; override
-with `TAU_PROVIDER_PROOF_MODEL=provider/model`. Use
+with `TAU_PROVIDER_PROOF_MODEL=provider/model`. For OpenRouter-hosted models,
+include the OpenRouter provider prefix, for example
+`TAU_PROVIDER_PROOF_MODEL=openrouter/deepseek/deepseek-v4-flash`. Use
 `TAU_PROVIDER_PROOF_AUTH_MODE=codex-cli` with a Codex CLI-supported model such
 as `openai/gpt-5.5` when validating the local subscription-backed provider
 path. The

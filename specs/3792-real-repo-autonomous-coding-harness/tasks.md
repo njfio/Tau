@@ -1,0 +1,26 @@
+# Tasks: Real-repo autonomous coding harness
+
+- [x] T1: Add red tests for multi-file mission run, outside-repo rejection, provider `edits` parsing, and multi-file resume.
+  - RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` failed before implementation because `CodingMissionRunRequest` and `CodingMissionResumeRequest` had no `controlled_edits` field.
+  - RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo test -p tau-coding-agent --bin tau_live_coding_loop_harness provider_backed -- --test-threads=1` failed before implementation because `ProviderEditResolution` had no `edits` field.
+- [x] T2: Implement backward-compatible multi-edit support in `CodingMissionRunner`.
+  - Added serde-default `controlled_edits` vectors while preserving legacy `controlled_edit`.
+  - Added edit-set normalization, full target prevalidation, multi-file checkpoint fingerprinting, and blocked fail-closed handling for escaped paths.
+- [x] T3: Extend provider payload parsing and harness request construction for multi-file edit plans.
+  - Provider JSON now accepts either legacy single-edit shape or `{"edits":[...]}`.
+  - Provider resume path passes the edit vector into `CodingMissionRunner`.
+- [x] T4: Add deterministic real-repo/worktree harness coverage with PR-ready evidence.
+  - Added `tau_live_coding_loop_harness --mode real-repo` with explicit verifier commands and real worktree base-branch detection.
+  - Added `scripts/dev/test-real-repo-autonomous-coding-harness.sh`.
+- [x] T5: Run scoped unit, integration, formatting, and lint validation; update docs/status truthfully.
+  - GREEN: `cargo fmt --check`
+  - GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` passed 27 mission tests.
+  - GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo test -p tau-coding-agent --bin tau_live_coding_loop_harness provider_backed -- --test-threads=1` passed 5 provider parser tests.
+  - GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target ./scripts/dev/test-full-autonomous-coding-loop.sh`
+  - GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target ./scripts/dev/test-real-repo-autonomous-coding-harness.sh`
+  - GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo clippy -p tau-agent-core --lib --tests -- -D warnings`
+  - GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo clippy -p tau-coding-agent --bin tau_live_coding_loop_harness -- -D warnings`
+  - RED: `RUST_MIN_STACK=8388608 CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo test -p tau-coding-agent --bin tau_live_coding_loop_harness provider_backed_openrouter_api_key_mode_injects_openrouter_key -- --nocapture` failed before the provider proof auth fix because `provider_cli` left `cli.openai_api_key` unset when only `OPENROUTER_API_KEY` supplied the OpenRouter credential.
+  - GREEN: `RUST_MIN_STACK=8388608 CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo test -p tau-coding-agent --bin tau_live_coding_loop_harness provider_backed -- --nocapture` passed 6 provider-backed harness tests.
+  - GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target cargo clippy -p tau-coding-agent --bin tau_live_coding_loop_harness -- -D warnings`
+  - LIVE GREEN: `TAU_LIVE_PROVIDER_PROOF=1 TAU_PROVIDER_PROOF_MODEL=openrouter/deepseek/deepseek-v4-flash TAU_PROVIDER_PROOF_REPORT_DIR=/tmp/tau-3792-provider-live-fixed CARGO_TARGET_DIR=/tmp/rust_pi-3792-red-target ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh` passed against OpenRouter/DeepSeek. Sanitized report: `passed=true`, `phase=pr_ready`, provider `openrouter`, model `deepseek/deepseek-v4-flash`, parsed edit path `status.txt`, response bytes `89`, response SHA-256 `cf341f4f557518800b7a0802d3e35f61d024dbcf144aa34855c07610843ef607`.

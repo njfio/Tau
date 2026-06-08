@@ -163,6 +163,8 @@ pub struct CodingMissionControlledEdit {
 pub struct CodingMissionRunRequest {
     #[serde(default)]
     pub controlled_edit: Option<CodingMissionControlledEdit>,
+    #[serde(default)]
+    pub controlled_edits: Vec<CodingMissionControlledEdit>,
     pub commit_message: String,
     pub started_unix_ms: u64,
 }
@@ -223,6 +225,8 @@ pub struct CodingMissionResumeRequest {
     pub mission_id: String,
     #[serde(default)]
     pub controlled_edit: Option<CodingMissionControlledEdit>,
+    #[serde(default)]
+    pub controlled_edits: Vec<CodingMissionControlledEdit>,
     pub commit_message: String,
     pub started_unix_ms: u64,
     #[serde(default)]
@@ -937,6 +941,8 @@ impl CodingMissionRunner {
         state: &mut CodingMissionState,
         request: CodingMissionRunRequest,
     ) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+        let controlled_edits =
+            requested_controlled_edits(&request.controlled_edit, &request.controlled_edits);
         if state.phase == CodingMissionPhase::Intake {
             state.transition_phase(
                 CodingMissionPhase::Planned,
@@ -982,13 +988,21 @@ impl CodingMissionRunner {
         }
         let mut verifier_passed = first.verifier_passed;
         if !verifier_passed {
-            if let Some(edit) = request.controlled_edit {
-                apply_controlled_edit_and_checkpoint(
+            if !controlled_edits.is_empty() {
+                if let Err(error) = apply_controlled_edits_and_checkpoint(
                     state,
-                    &edit,
+                    &controlled_edits,
                     branch.branch_name.as_str(),
                     request.started_unix_ms.saturating_add(200),
-                )?;
+                ) {
+                    return block_controlled_edit_error(
+                        state,
+                        error,
+                        false,
+                        iterations,
+                        request.started_unix_ms.saturating_add(299),
+                    );
+                }
                 iterations = iterations.saturating_add(1);
                 let second = run_coding_mission_verifiers(
                     state,
@@ -1179,29 +1193,36 @@ fn resume_from_apply_edit(
     checkpoint: &CodingMissionResumeCheckpoint,
     request: CodingMissionResumeRequest,
 ) -> Result<CodingMissionRunOutcome, CodingMissionError> {
-    let edit = match request.controlled_edit.clone() {
-        Some(edit) => edit,
-        None => {
-            return Ok(CodingMissionRunOutcome {
-                phase: state.phase,
-                verifier_passed: false,
-                committed: None,
-                blocked_reason: None,
-                iterations: 0,
-            });
-        }
-    };
+    let controlled_edits =
+        requested_controlled_edits(&request.controlled_edit, &request.controlled_edits);
+    if controlled_edits.is_empty() {
+        return Ok(CodingMissionRunOutcome {
+            phase: state.phase,
+            verifier_passed: false,
+            committed: None,
+            blocked_reason: None,
+            iterations: 0,
+        });
+    }
     let branch_name = checkpoint
         .branch_name
         .clone()
         .or_else(|| latest_prepared_branch_name(state))
         .unwrap_or_else(|| default_coding_git_branch_name(state));
-    apply_controlled_edit_and_checkpoint(
+    if let Err(error) = apply_controlled_edits_and_checkpoint(
         state,
-        &edit,
+        &controlled_edits,
         branch_name.as_str(),
         request.started_unix_ms.saturating_add(100),
-    )?;
+    ) {
+        return block_controlled_edit_error(
+            state,
+            error,
+            false,
+            1,
+            request.started_unix_ms.saturating_add(199),
+        );
+    }
     if request.stop_after == Some(CodingMissionResumeStopAfter::ControlledEdit) {
         return Ok(CodingMissionRunOutcome {
             phase: state.phase,
@@ -1403,13 +1424,27 @@ fn restore_resume_branch(
     Ok(Some(branch_name))
 }
 
-fn apply_controlled_edit_and_checkpoint(
+fn requested_controlled_edits(
+    controlled_edit: &Option<CodingMissionControlledEdit>,
+    controlled_edits: &[CodingMissionControlledEdit],
+) -> Vec<CodingMissionControlledEdit> {
+    let mut edits = Vec::with_capacity(
+        usize::from(controlled_edit.is_some()).saturating_add(controlled_edits.len()),
+    );
+    if let Some(edit) = controlled_edit.clone() {
+        edits.push(edit);
+    }
+    edits.extend(controlled_edits.iter().cloned());
+    edits
+}
+
+fn apply_controlled_edits_and_checkpoint(
     state: &mut CodingMissionState,
-    edit: &CodingMissionControlledEdit,
+    edits: &[CodingMissionControlledEdit],
     branch_name: &str,
     started_unix_ms: u64,
 ) -> Result<(), CodingMissionError> {
-    apply_controlled_edit(state, edit, started_unix_ms)?;
+    apply_controlled_edits(state, edits, started_unix_ms)?;
     let fingerprint = current_mutation_fingerprint(state, started_unix_ms.saturating_add(1))?;
     record_resume_checkpoint(
         state,
@@ -1419,6 +1454,28 @@ fn apply_controlled_edit_and_checkpoint(
         "resume_verify_after_edit",
         started_unix_ms.saturating_add(2),
     )
+}
+
+fn block_controlled_edit_error(
+    state: &mut CodingMissionState,
+    error: CodingMissionError,
+    verifier_passed: bool,
+    iterations: usize,
+    updated_unix_ms: u64,
+) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+    match error {
+        CodingMissionError::GitLifecycle {
+            reason_code: "controlled_edit_outside_repo",
+            message: _,
+        } => block_coding_mission_run(
+            state,
+            "controlled_edit_outside_repo",
+            verifier_passed,
+            iterations,
+            updated_unix_ms,
+        ),
+        other => Err(other),
+    }
 }
 
 fn record_resume_checkpoint(
@@ -1587,11 +1644,57 @@ fn run_coding_mission_verifiers(
     })
 }
 
-fn apply_controlled_edit(
+fn apply_controlled_edits(
     state: &mut CodingMissionState,
-    edit: &CodingMissionControlledEdit,
+    edits: &[CodingMissionControlledEdit],
     created_unix_ms: u64,
 ) -> Result<(), CodingMissionError> {
+    let targets = validate_controlled_edit_targets(state, edits)?;
+    for (edit, target) in edits.iter().zip(targets.iter()) {
+        write_text_atomic(target, &edit.contents).map_err(|source| {
+            CodingMissionError::StateWrite {
+                path: target.clone(),
+                source,
+            }
+        })?;
+    }
+    for (edit, target) in edits.iter().zip(targets.iter()) {
+        let artifact_id = format!("controlled_edit:{}", edit.relative_path.display());
+        state.mission.artifacts.push(MissionArtifactRef {
+            artifact_id,
+            kind: "coding_mission_controlled_edit".to_string(),
+            path: Some(target.display().to_string()),
+            summary: Some(edit.reason_code.clone()),
+        });
+        state.events.push(CodingMissionEvent {
+            phase: state.phase,
+            reason_code: edit.reason_code.clone(),
+            message: format!("controlled edit wrote {}", edit.relative_path.display()),
+            created_unix_ms,
+        });
+    }
+    state.updated_unix_ms = created_unix_ms;
+    state.mission.latest_output_summary = match edits {
+        [edit] => format!("controlled edit wrote {}", edit.relative_path.display()),
+        _ => format!("controlled edit set wrote {} files", edits.len()),
+    };
+    save_coding_mission_state(state)
+}
+
+fn validate_controlled_edit_targets(
+    state: &CodingMissionState,
+    edits: &[CodingMissionControlledEdit],
+) -> Result<Vec<PathBuf>, CodingMissionError> {
+    edits
+        .iter()
+        .map(|edit| validate_controlled_edit_target(state, edit))
+        .collect()
+}
+
+fn validate_controlled_edit_target(
+    state: &CodingMissionState,
+    edit: &CodingMissionControlledEdit,
+) -> Result<PathBuf, CodingMissionError> {
     if edit.relative_path.is_absolute()
         || edit.relative_path.components().any(|component| {
             matches!(
@@ -1612,29 +1715,7 @@ fn apply_controlled_edit(
             message: target.display().to_string(),
         });
     }
-    write_text_atomic(&target, &edit.contents).map_err(|source| {
-        CodingMissionError::StateWrite {
-            path: target.clone(),
-            source,
-        }
-    })?;
-    let artifact_id = format!("controlled_edit:{}", edit.relative_path.display());
-    state.mission.artifacts.push(MissionArtifactRef {
-        artifact_id,
-        kind: "coding_mission_controlled_edit".to_string(),
-        path: Some(target.display().to_string()),
-        summary: Some(edit.reason_code.clone()),
-    });
-    state.events.push(CodingMissionEvent {
-        phase: state.phase,
-        reason_code: edit.reason_code.clone(),
-        message: format!("controlled edit wrote {}", edit.relative_path.display()),
-        created_unix_ms,
-    });
-    state.updated_unix_ms = created_unix_ms;
-    state.mission.latest_output_summary =
-        format!("controlled edit wrote {}", edit.relative_path.display());
-    save_coding_mission_state(state)
+    Ok(target)
 }
 
 fn block_coding_mission_run(
@@ -3050,6 +3131,23 @@ mod tests {
         config
     }
 
+    fn multi_file_verifier_config_for(root: &Path) -> CodingMissionConfig {
+        let mut config = committed_config_for(root);
+        std::fs::write(config.repo_path.join("status.txt"), "fail\n").expect("status file");
+        std::fs::create_dir_all(config.repo_path.join("docs")).expect("docs dir");
+        std::fs::write(config.repo_path.join("docs/notes.txt"), "missing\n").expect("notes file");
+        git(&config.repo_path, &["add", "status.txt", "docs/notes.txt"]);
+        git(
+            &config.repo_path,
+            &["commit", "-m", "add multi file fixture"],
+        );
+        config.verifier_commands = vec![
+            "grep -q pass status.txt".to_string(),
+            "grep -q helper docs/notes.txt".to_string(),
+        ];
+        config
+    }
+
     #[test]
     fn spec_c06_outer_loop_records_red_and_stays_executing() {
         let temp = tempdir().expect("tempdir");
@@ -3062,6 +3160,7 @@ mod tests {
                 &mut state,
                 CodingMissionRunRequest {
                     controlled_edit: None,
+                    controlled_edits: Vec::new(),
                     commit_message: "Make verifier green".to_string(),
                     started_unix_ms: 1_800_000_002_000,
                 },
@@ -3098,6 +3197,7 @@ mod tests {
                         contents: "pass\n".to_string(),
                         reason_code: "controlled_fix".to_string(),
                     }),
+                    controlled_edits: Vec::new(),
                     commit_message: "Make verifier green".to_string(),
                     started_unix_ms: 1_800_000_002_500,
                 },
@@ -3126,6 +3226,113 @@ mod tests {
     }
 
     #[test]
+    fn spec_c12_outer_loop_applies_multi_file_edits_and_commits() {
+        let temp = tempdir().expect("tempdir");
+        let config = multi_file_verifier_config_for(temp.path());
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    controlled_edits: vec![
+                        CodingMissionControlledEdit {
+                            relative_path: PathBuf::from("status.txt"),
+                            contents: "pass\n".to_string(),
+                            reason_code: "controlled_fix_status".to_string(),
+                        },
+                        CodingMissionControlledEdit {
+                            relative_path: PathBuf::from("docs/notes.txt"),
+                            contents: "helper\n".to_string(),
+                            reason_code: "controlled_fix_notes".to_string(),
+                        },
+                    ],
+                    commit_message: "Make multi-file verifier green".to_string(),
+                    started_unix_ms: 1_800_000_002_700,
+                },
+            )
+            .expect("run multi-file mission");
+
+        assert_eq!(outcome.phase, CodingMissionPhase::PrReady);
+        assert!(outcome.verifier_passed);
+        assert_eq!(
+            outcome
+                .committed
+                .as_ref()
+                .map(|commit| commit.changed_files.clone()),
+            Some(vec!["docs/notes.txt".to_string(), "status.txt".to_string()])
+        );
+        assert_eq!(
+            std::fs::read_to_string(state.repo_path.join("status.txt")).expect("status"),
+            "pass\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(state.repo_path.join("docs/notes.txt")).expect("notes"),
+            "helper\n"
+        );
+        assert!(state
+            .mission
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.artifact_id == "controlled_edit:status.txt"));
+        assert!(state
+            .mission
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.artifact_id == "controlled_edit:docs/notes.txt"));
+    }
+
+    #[test]
+    fn regression_outer_loop_blocks_multi_file_escape_before_partial_write() {
+        let temp = tempdir().expect("tempdir");
+        let outside = tempdir().expect("outside");
+        let mut config = multi_file_verifier_config_for(temp.path());
+        config.allowed_roots.push(outside.path().to_path_buf());
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    controlled_edits: vec![
+                        CodingMissionControlledEdit {
+                            relative_path: PathBuf::from("status.txt"),
+                            contents: "pass\n".to_string(),
+                            reason_code: "controlled_fix_status".to_string(),
+                        },
+                        CodingMissionControlledEdit {
+                            relative_path: PathBuf::from("../escape.txt"),
+                            contents: "escape\n".to_string(),
+                            reason_code: "controlled_escape".to_string(),
+                        },
+                    ],
+                    commit_message: "Reject escaped edit".to_string(),
+                    started_unix_ms: 1_800_000_002_800,
+                },
+            )
+            .expect("run escaped multi-file mission");
+
+        assert_eq!(outcome.phase, CodingMissionPhase::Blocked);
+        assert_eq!(
+            outcome.blocked_reason.as_deref(),
+            Some("controlled_edit_outside_repo")
+        );
+        assert_eq!(
+            std::fs::read_to_string(state.repo_path.join("status.txt")).expect("status"),
+            "fail\n"
+        );
+        assert!(!outside.path().join("escape.txt").exists());
+        assert!(!state
+            .git_evidence
+            .iter()
+            .any(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated));
+    }
+
+    #[test]
     fn regression_outer_loop_blocks_completion_without_mutation_evidence() {
         let temp = tempdir().expect("tempdir");
         let config = verifier_config_for(temp.path(), "pass\n", "grep -q pass status.txt");
@@ -3137,6 +3344,7 @@ mod tests {
                 &mut state,
                 CodingMissionRunRequest {
                     controlled_edit: None,
+                    controlled_edits: Vec::new(),
                     commit_message: "No mutation".to_string(),
                     started_unix_ms: 1_800_000_003_000,
                 },
@@ -3161,6 +3369,7 @@ mod tests {
                 &mut state,
                 CodingMissionRunRequest {
                     controlled_edit: None,
+                    controlled_edits: Vec::new(),
                     commit_message: "Impossible verifier".to_string(),
                     started_unix_ms: 1_800_000_003_500,
                 },
@@ -3191,6 +3400,7 @@ mod tests {
                 &mut state,
                 CodingMissionRunRequest {
                     controlled_edit: None,
+                    controlled_edits: Vec::new(),
                     commit_message: "Denied verifier".to_string(),
                     started_unix_ms: 1_800_000_004_000,
                 },
@@ -3222,6 +3432,7 @@ mod tests {
                         contents: "pass again\n".to_string(),
                         reason_code: "controlled_fix".to_string(),
                     }),
+                    controlled_edits: Vec::new(),
                     commit_message: "No verifier".to_string(),
                     started_unix_ms: 1_800_000_004_500,
                 },
@@ -3255,6 +3466,7 @@ mod tests {
                 &mut state,
                 CodingMissionRunRequest {
                     controlled_edit: None,
+                    controlled_edits: Vec::new(),
                     commit_message: "Make verifier green".to_string(),
                     started_unix_ms: 1_800_000_005_000,
                 },
@@ -3292,6 +3504,7 @@ mod tests {
                     contents: "pass\n".to_string(),
                     reason_code: "controlled_fix_after_red_resume".to_string(),
                 }),
+                controlled_edits: Vec::new(),
                 commit_message: "Make verifier green after resume".to_string(),
                 started_unix_ms: 1_800_000_005_500,
                 stop_after: None,
@@ -3346,6 +3559,7 @@ mod tests {
                 &mut state,
                 CodingMissionRunRequest {
                     controlled_edit: None,
+                    controlled_edits: Vec::new(),
                     commit_message: "Make verifier green".to_string(),
                     started_unix_ms: 1_800_000_006_000,
                 },
@@ -3361,6 +3575,7 @@ mod tests {
                     contents: "pass\n".to_string(),
                     reason_code: "controlled_fix_before_crash".to_string(),
                 }),
+                controlled_edits: Vec::new(),
                 commit_message: "Make verifier green after edit".to_string(),
                 started_unix_ms: 1_800_000_006_500,
                 stop_after: Some(CodingMissionResumeStopAfter::ControlledEdit),
@@ -3394,6 +3609,7 @@ mod tests {
                 state_root,
                 mission_id,
                 controlled_edit: None,
+                controlled_edits: Vec::new(),
                 commit_message: "Commit resumed edit".to_string(),
                 started_unix_ms: 1_800_000_007_000,
                 stop_after: None,
@@ -3417,6 +3633,84 @@ mod tests {
             .any(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated));
     }
 
+    #[test]
+    fn spec_c13_resume_after_multi_file_edit_completes_with_full_fingerprint() {
+        let temp = tempdir().expect("tempdir");
+        let config = multi_file_verifier_config_for(temp.path());
+        let state_root = config.state_root.clone();
+        let mission_id = config.mission_id.clone();
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    controlled_edits: Vec::new(),
+                    commit_message: "Prepare multi-file resume".to_string(),
+                    started_unix_ms: 1_800_000_007_500,
+                },
+            )
+            .expect("run red mission");
+
+        let paused = runner
+            .resume(CodingMissionResumeRequest {
+                state_root: state_root.clone(),
+                mission_id: mission_id.clone(),
+                controlled_edit: None,
+                controlled_edits: vec![
+                    CodingMissionControlledEdit {
+                        relative_path: PathBuf::from("status.txt"),
+                        contents: "pass\n".to_string(),
+                        reason_code: "controlled_fix_status_after_resume".to_string(),
+                    },
+                    CodingMissionControlledEdit {
+                        relative_path: PathBuf::from("docs/notes.txt"),
+                        contents: "helper\n".to_string(),
+                        reason_code: "controlled_fix_notes_after_resume".to_string(),
+                    },
+                ],
+                commit_message: "Apply multi-file resume edit".to_string(),
+                started_unix_ms: 1_800_000_008_000,
+                stop_after: Some(CodingMissionResumeStopAfter::ControlledEdit),
+            })
+            .expect("resume through multi-file edit");
+
+        let fingerprint = paused
+            .state
+            .resume_checkpoint
+            .as_ref()
+            .and_then(|checkpoint| checkpoint.mutation_fingerprint.as_ref())
+            .expect("multi-file fingerprint");
+        assert_eq!(
+            fingerprint.changed_files,
+            vec!["docs/notes.txt".to_string(), "status.txt".to_string()]
+        );
+
+        let resumed = runner
+            .resume(CodingMissionResumeRequest {
+                state_root,
+                mission_id,
+                controlled_edit: None,
+                controlled_edits: Vec::new(),
+                commit_message: "Commit multi-file resumed edit".to_string(),
+                started_unix_ms: 1_800_000_008_500,
+                stop_after: None,
+            })
+            .expect("resume after multi-file edit");
+
+        assert_eq!(resumed.run.phase, CodingMissionPhase::PrReady);
+        assert_eq!(
+            resumed
+                .run
+                .committed
+                .as_ref()
+                .map(|commit| commit.changed_files.clone()),
+            Some(vec!["docs/notes.txt".to_string(), "status.txt".to_string()])
+        );
+    }
+
     fn pr_ready_state_for(root: &Path) -> (CodingMissionState, CodingGitLifecycleEvidence) {
         let config = verifier_config_for(root, "fail\n", "grep -q pass status.txt");
         let mut state = CodingMissionState::create(config).expect("create state");
@@ -3430,6 +3724,7 @@ mod tests {
                         contents: "pass\n".to_string(),
                         reason_code: "controlled_fix_for_pr_ready".to_string(),
                     }),
+                    controlled_edits: Vec::new(),
                     commit_message: "Make verifier green".to_string(),
                     started_unix_ms: 1_800_000_007_500,
                 },
