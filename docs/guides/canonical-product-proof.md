@@ -112,6 +112,28 @@ Boundary: this is a provider-backed disposable fixture for the M334 task. It is
 stronger than the controlled-edit lifecycle proof, but it is still not evidence
 that Tau can autonomously solve arbitrary repository issues without supervision.
 
+Run the provider verifier repair loop when the question is whether Tau can keep
+working after a provider edit fails verification:
+
+```bash
+TAU_LIVE_PROVIDER_REPAIR_PROOF=1 \
+  TAU_PROVIDER_PROOF_MODEL=openrouter/deepseek/deepseek-v4-flash \
+  ./scripts/dev/test-provider-verifier-repair-loop.sh
+```
+
+The script first runs deterministic checks for successful repair and exhausted
+repair-budget fail-closed behavior. With `TAU_LIVE_PROVIDER_REPAIR_PROOF=1`, it
+then deliberately applies a first provider-shaped edit that leaves one verifier
+failing, captures failed verifier evidence plus git diff, sends that repair
+context to the configured provider, reruns verification, and expects commit plus
+manual PR-ready output. Set `TAU_PROVIDER_PROOF_REPORT_DIR=/path/to/reports` to
+preserve sanitized JSON reports.
+
+Boundary: this proves a bounded verifier failure -> provider repair -> rerun ->
+PR-ready loop for a disposable M334 real-repo fixture. It still does not claim
+unattended arbitrary issue selection, merge authority, or protected-branch
+bypass.
+
 To also verify the Gateway sessions API readiness surface, add `--sessions-smoke`. This fetches `/gateway/sessions`, validates the JSON response shape, and records the sessions endpoint in the report:
 
 ```bash
