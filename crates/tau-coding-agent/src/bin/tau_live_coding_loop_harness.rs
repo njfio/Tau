@@ -87,6 +87,10 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     provider_max_retries: usize,
 
+    /// Provider output token cap for live provider-backed proof mode.
+    #[arg(long, default_value_t = 1_024)]
+    provider_max_tokens: u32,
+
     /// Mock provider response used for deterministic provider parsing tests.
     #[arg(long)]
     mock_provider_response: Option<String>,
@@ -539,7 +543,7 @@ fn resolve_provider_edit(
         tools: Vec::new(),
         tool_choice: None,
         json_mode: true,
-        max_tokens: Some(256),
+        max_tokens: Some(args.provider_max_tokens.max(1)),
         temperature: Some(0.0),
         prompt_cache: PromptCacheConfig::default(),
     };

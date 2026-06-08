@@ -6,9 +6,44 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 FIXTURE_PATH="${REPO_ROOT}/tasks/fixtures/m334/tranche-one-autonomy-benchmark.json"
 TASK_ID="repo_spec_to_pr_feature_delivery"
 
+load_repo_dotenv_if_present() {
+  local dotenv_path="${REPO_ROOT}/.env"
+  [[ -f "${dotenv_path}" ]] || return 0
+
+  local line key value
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -n "${line}" && "${line}" != \#* ]] || continue
+    if [[ "${line}" == export[[:space:]]* ]]; then
+      line="${line#export}"
+      line="${line#"${line%%[![:space:]]*}"}"
+    fi
+    [[ "${line}" == *=* ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    [[ -z "${!key:-}" ]] || continue
+    if [[ "${#value}" -ge 2 ]]; then
+      if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+        value="${value:1:${#value}-2}"
+      elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+    fi
+    export "${key}=${value}"
+  done <"${dotenv_path}"
+}
+
+load_repo_dotenv_if_present
+
 MODE="${1:-}"
 MODEL="${TAU_PROVIDER_PROOF_MODEL:-openai/gpt-4.1-mini}"
 AUTH_MODE="${TAU_PROVIDER_PROOF_AUTH_MODE:-api-key}"
+MAX_TOKENS="${TAU_PROVIDER_PROOF_MAX_TOKENS:-1024}"
 LIVE_ENABLED="${TAU_LIVE_PROVIDER_PROOF:-0}"
 REPORT_DIR="${TAU_PROVIDER_PROOF_REPORT_DIR:-}"
 
@@ -48,6 +83,7 @@ run_provider_case() {
     --run-id "m334-provider-live" \
     --provider-model "${MODEL}" \
     --provider-auth-mode "${AUTH_MODE}" \
+    --provider-max-tokens "${MAX_TOKENS}" \
     --started-unix-ms 1800000200000 >/dev/null
 
   python3 - "${report_path}" "${MODEL}" <<'PY'
@@ -103,6 +139,7 @@ run_malformed_case() {
     --run-id "m334-provider-malformed" \
     --provider-model "${MODEL}" \
     --provider-auth-mode "${AUTH_MODE}" \
+    --provider-max-tokens "${MAX_TOKENS}" \
     --mock-provider-response "not-json" \
     --started-unix-ms 1800000300000 >/dev/null
   local status=$?
