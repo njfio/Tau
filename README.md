@@ -32,6 +32,7 @@ These are the paths that operate as connected flows today.
 | Unified runtime lifecycle loop | `./scripts/dev/prove-tau-product.sh --check --report /tmp/tau-product-proof-check.json` for static proof evidence, then `./scripts/dev/prove-tau-product.sh --run --webchat-smoke --report /tmp/tau-product-proof-webchat.json` for opt-in live product-surface evidence | One-command runtime bring-up (`up/status/down`) for gateway/dashboard + interactive TUI agent (`tui`) with explicit live-shell fallback, optional webchat readiness smoke, and optional JSON evidence | [`scripts/dev/prove-tau-product.sh`](scripts/dev/prove-tau-product.sh), [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`docs/guides/canonical-product-proof.md`](docs/guides/canonical-product-proof.md) |
 | Live coding mission loop | `./scripts/dev/test-full-autonomous-coding-loop.sh` | Disposable-repo M334 `repo_spec_to_pr_feature_delivery` harness through `CodingMissionRunner`: RED verifier, controlled edit, GREEN verifier, commit, PR-ready bundle, crash/resume, and blocked-task fail-closed evidence | [`scripts/dev/test-full-autonomous-coding-loop.sh`](scripts/dev/test-full-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3654/tasks.md`](specs/3654/tasks.md) |
 | Provider-backed coding loop | `TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh` | Opt-in disposable-repo proof that calls a configured provider using API-key or subscription auth, parses JSON edit instructions into `CodingMissionRunner`, records RED/GREEN verifier, commit, and PR-ready evidence, and fail-closes malformed provider output | [`scripts/dev/test-provider-backed-autonomous-coding-loop.sh`](scripts/dev/test-provider-backed-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3788-provider-backed-coding-loop-proof/tasks.md`](specs/3788-provider-backed-coding-loop-proof/tasks.md) |
+| Real-repo coding harness | `./scripts/dev/test-real-repo-autonomous-coding-harness.sh` | Temporary worktree of this repository through `CodingMissionRunner`: provider-compatible multi-file edit array, real git branch/commit, RED/GREEN verifier evidence, and manual PR-ready bundle | [`scripts/dev/test-real-repo-autonomous-coding-harness.sh`](scripts/dev/test-real-repo-autonomous-coding-harness.sh), [`crates/tau-agent-core/src/coding_mission.rs`](crates/tau-agent-core/src/coding_mission.rs), [`specs/3792-real-repo-autonomous-coding-harness/spec.md`](specs/3792-real-repo-autonomous-coding-harness/spec.md) |
 | Multi-channel ingress loop | `./scripts/demo/multi-channel.sh` | Multi-channel runtime, transport normalization, routing pipeline | [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md), [`docs/guides/transports.md`](docs/guides/transports.md) |
 | Prompt optimization loop | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) runbook flow | Training runner/store/tracer/proxy + rollout controls | [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`docs/guides/training-proxy-ops.md`](docs/guides/training-proxy-ops.md) |
 | Connected operator GA loop | `./scripts/verify/m296-ga-readiness-gate.sh` | RL maturity wave + auth/readiness checks + rollback trigger validation + closeout signoff criteria | [`docs/guides/m296-ga-readiness-gate.md`](docs/guides/m296-ga-readiness-gate.md), `artifacts/operator-ga-readiness/verification-report.json` |
@@ -50,6 +51,9 @@ These are the paths that operate as connected flows today.
   mission state can branch, retry from RED verifier evidence, apply a controlled
   fix, verify GREEN, commit, package PR-ready output, resume after interruption,
   and stop honestly on a blocked verifier.
+- Run a deterministic real-repo coding harness against a temporary worktree of
+  this repository with provider-compatible multi-file edits, RED/GREEN verifier
+  transcript, commit hash, and PR-ready bundle evidence.
 
 ## Capability Boundaries
 
@@ -94,9 +98,17 @@ Some surfaces are intentionally diagnostics-first or staged:
     adds the provider-backed proof: a configured provider returns JSON edit
     instructions, Tau parses them into `CodingMissionRunner`, and the report
     records sanitized provider/model metadata plus RED/GREEN verifier, commit,
-    and PR-ready evidence. Set `TAU_PROVIDER_PROOF_AUTH_MODE=codex-cli` with a
+    and PR-ready evidence. For OpenRouter-hosted models, include the
+    OpenRouter provider prefix, for example
+    `TAU_PROVIDER_PROOF_MODEL=openrouter/deepseek/deepseek-v4-flash`. Set
+    `TAU_PROVIDER_PROOF_AUTH_MODE=codex-cli` with a
     Codex CLI-supported model such as `openai/gpt-5.5` to validate the
     local subscription-backed provider path.
+  - `./scripts/dev/test-real-repo-autonomous-coding-harness.sh` runs the same
+    lifecycle against a temporary worktree of this repository and validates a
+    provider-compatible multi-file edit array. This is real git/worktree/commit
+    evidence, but not unattended arbitrary issue selection, durable background
+    recovery UI, or auto-merge.
 
 Executable claim boundary:
 
@@ -129,7 +141,7 @@ validation, or headed-browser pixel proof are complete.
 | Unified runtime control-plane status | Partial | `tau-unified status` exposes health/logs/sessions/memory/jobs/routines/deploy visibility; polished command-center UX and durable proactive recovery remain expanding | [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`scripts/dev/runtime-reality-gate.sh`](scripts/dev/runtime-reality-gate.sh) |
 | Prompt optimization training | Integrated | Canonical training path today | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
 | True RL | Integrated | Deterministic end-to-end harness emits rollout + GAE/PPO artifact evidence | [`crates/tau-trainer/src/rl_e2e.rs`](crates/tau-trainer/src/rl_e2e.rs), [`crates/tau-trainer/src/bin/rl_e2e_harness.rs`](crates/tau-trainer/src/bin/rl_e2e_harness.rs) |
-| Autonomous coding lifecycle | Partial | Live local `CodingMissionRunner` harness proves lifecycle mechanics; opt-in provider-backed proof now verifies a configured provider can supply the edit for the disposable task, while broader arbitrary spec-to-PR autonomy remains expanding | [`scripts/dev/test-full-autonomous-coding-loop.sh`](scripts/dev/test-full-autonomous-coding-loop.sh), [`scripts/dev/test-provider-backed-autonomous-coding-loop.sh`](scripts/dev/test-provider-backed-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs) |
+| Autonomous coding lifecycle | Partial | Live local `CodingMissionRunner` harness proves lifecycle mechanics; provider-backed proof verifies configured-provider edit supply; real-repo harness now validates provider-compatible multi-file worktree commits and PR-ready output, while arbitrary issue selection, durable background recovery UX, and auto-merge remain expanding | [`scripts/dev/test-full-autonomous-coding-loop.sh`](scripts/dev/test-full-autonomous-coding-loop.sh), [`scripts/dev/test-provider-backed-autonomous-coding-loop.sh`](scripts/dev/test-provider-backed-autonomous-coding-loop.sh), [`scripts/dev/test-real-repo-autonomous-coding-harness.sh`](scripts/dev/test-real-repo-autonomous-coding-harness.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs) |
 | TUI | Integrated | Operator-shell + interactive `agent` mode + state-backed `shell-live` diagnostics | [`crates/tau-tui/src/main.rs`](crates/tau-tui/src/main.rs), [`crates/tau-tui/src/lib.rs`](crates/tau-tui/src/lib.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
 
 ## Current Gaps and Execution Plan

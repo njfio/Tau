@@ -12,14 +12,15 @@ intended retryable backend-unavailable mapping path is exercised.
 Inputs:
 - `crates/tau-browser-automation/src/browser_automation_live.rs`
 - GitHub Actions failure evidence from PR `#3631`
+- GitHub Actions failure evidence from PR `#3793`
 - Existing local live-fixture helpers in the same test module
 
 Outputs:
-- The failing live-fixture integration test uses a deterministic temporary
-  executable pattern that is stable on Linux CI.
+- The live-fixture integration tests use a deterministic temporary executable
+  pattern that is stable on Linux CI.
 - The executor failure still maps to
   `browser_automation_backend_unavailable` with `503`.
-- Package-scoped validation on PR `#3631` advances beyond the
+- Package-scoped validation on PR `#3631` and PR `#3793` advances beyond the
   `Text file busy` failure in `tau-browser-automation`.
 
 ## Boundaries / Non-goals
@@ -43,25 +44,32 @@ Out of scope:
   `Text file busy (os error 26)`, so the test never reaches the intended error
   mapping assertion.
 - Neighboring live-fixture tests already use a Python-based temporary mock
-  executable and do not exhibit this launcher race.
+- PR `#3793` later exposed the same `Text file busy (os error 26)` failure in
+  `functional_live_fixture_runner_executes_navigation_and_action_sequence`
+  and `regression_drop_cleanup_shuts_down_active_session_without_orphan_marker`
+  against `mock-playwright-cli.py`, showing the Python helper must avoid direct
+  kernel execution of temporary scripts in Linux CI.
 
 ## Acceptance Criteria
 ### AC-1 The failing live-fixture test no longer relies on the unstable shell-script launcher path
 Given the retryable backend-unavailable integration test in
 `browser_automation_live.rs`,
 when it provisions its temporary executor fixture,
-then it uses a stable executable pattern already proven by neighboring tests
-instead of the ad hoc shell script that triggers `Text file busy` in CI.
+then it uses a stable executable pattern that writes, syncs, closes, and marks
+the temporary file executable, then launches it through a stable interpreter
+prefix instead of directly executing the temporary script path that triggers
+`Text file busy` in CI.
 
 ### AC-2 The behavioral contract remains unchanged
-Given the same failing-executor scenario,
+Given the same failing-executor scenario and the success-path mock executor,
 when the updated test runs,
 then `run_browser_automation_live_fixture(...)` still returns a summary with
-one retryable failure and the failure maps to
-`browser_automation_backend_unavailable` / HTTP `503`.
+one retryable failure for the failure fixture, two successes for the success
+fixture, and the failure maps to `browser_automation_backend_unavailable` /
+HTTP `503`.
 
 ### AC-3 Package-scoped CI advances beyond the launcher race
-Given the package-scoped validation path for PR `#3631`,
+Given the package-scoped validation path for PR `#3631` and PR `#3793`,
 when `tau-browser-automation` tests run under CI,
 then they no longer fail on `failed to launch browser automation executor` with
 `Text file busy (os error 26)`.
@@ -69,14 +77,17 @@ then they no longer fail on `failed to launch browser automation executor` with
 ## Conformance Cases
 - C-01 / AC-1 / Functional:
   The retryable backend-unavailable integration test no longer writes or
-  launches `failing-playwright-cli.sh`; it uses the stable mock-executable
-  helper pattern.
+  launches `failing-playwright-cli.sh`; shared mock-executable helpers use the
+  stable close-and-sync writer pattern plus interpreter-prefix execution.
 - C-02 / AC-2 / Regression:
   `cargo test -p tau-browser-automation --lib integration_live_fixture_maps_executor_failures_to_retryable_backend_unavailable -- --nocapture`
   passes and still asserts one retryable failure.
+- C-04 / AC-2 / Regression:
+  `cargo test -p tau-browser-automation --lib functional_live_fixture_runner_executes_navigation_and_action_sequence -- --nocapture`
+  passes and still asserts two successful live-fixture cases.
 - C-03 / AC-3 / Regression:
-  PR `#3631` no longer fails on the `Text file busy (os error 26)` launcher
-  race in `tau-browser-automation`.
+  PR `#3631` and PR `#3793` no longer fail on the
+  `Text file busy (os error 26)` launcher race in `tau-browser-automation`.
 
 ## Files To Touch
 - `specs/milestones/m330/index.md`
@@ -94,6 +105,7 @@ then they no longer fail on `failed to launch browser automation executor` with
 - Regression: rerun
   `./scripts/dev/fast-validate.sh --base 36dd1b5e417c68d6e8e49c276e3fccc297c502eb`
   locally and then on PR `#3631`.
+- Regression: rerun the PR `#3793` Quality gate after the shared helper fix.
 
 ## Success Metrics / Observable Signals
 - `tau-browser-automation` advances beyond the current Linux launcher race on

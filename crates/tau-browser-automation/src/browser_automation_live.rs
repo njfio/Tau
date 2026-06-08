@@ -104,15 +104,27 @@ pub trait BrowserActionExecutor {
 /// Public struct `PlaywrightCliActionExecutor` used across Tau components.
 pub struct PlaywrightCliActionExecutor {
     cli_path: String,
+    cli_args: Vec<String>,
 }
 
 impl PlaywrightCliActionExecutor {
     pub fn new(cli_path: impl Into<String>) -> Result<Self> {
+        Self::with_args(cli_path, std::iter::empty::<String>())
+    }
+
+    pub fn with_args<I, S>(cli_path: impl Into<String>, cli_args: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
         let cli_path = cli_path.into();
         if cli_path.trim().is_empty() {
             bail!("browser automation playwright cli path cannot be empty");
         }
-        Ok(Self { cli_path })
+        Ok(Self {
+            cli_path,
+            cli_args: cli_args.into_iter().map(Into::into).collect(),
+        })
     }
 
     fn invoke_command(
@@ -121,6 +133,7 @@ impl PlaywrightCliActionExecutor {
         payload: Option<&BrowserActionRequest>,
     ) -> Result<String> {
         let mut command = Command::new(self.cli_path.trim());
+        command.args(&self.cli_args);
         command.arg(subcommand);
         if let Some(payload) = payload {
             command.arg(
@@ -325,7 +338,8 @@ fn enforce_live_policy(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::io::Write;
+    use std::path::Path;
     use std::sync::{Arc, Mutex};
 
     use anyhow::Result;
@@ -419,8 +433,28 @@ mod tests {
         }
     }
 
-    fn write_mock_playwright_cli(path: &PathBuf) {
-        std::fs::write(
+    fn write_executable_fixture(path: &Path, body: &str) {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path)
+            .expect("open executable fixture");
+        file.write_all(body.as_bytes())
+            .expect("write executable fixture");
+        file.sync_all().expect("sync executable fixture");
+        drop(file);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(path).expect("stat").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(path, perms).expect("chmod");
+        }
+    }
+
+    fn write_mock_playwright_cli(path: &Path) {
+        write_executable_fixture(
             path,
             r#"#!/usr/bin/env python3
 import json
@@ -507,19 +541,11 @@ print(json.dumps({
     "response_body": {"status": "rejected", "reason": "invalid_operation"}
 }))
 "#,
-        )
-        .expect("write mock playwright cli");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(path).expect("stat").permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(path, perms).expect("chmod");
-        }
+        );
     }
 
-    fn write_failing_playwright_cli(path: &PathBuf) {
-        std::fs::write(
+    fn write_failing_playwright_cli(path: &Path) {
+        write_executable_fixture(
             path,
             r#"#!/usr/bin/env python3
 import json
@@ -547,15 +573,15 @@ if command == "execute-action":
 print("unsupported command", file=sys.stderr)
 raise SystemExit(2)
 "#,
+        );
+    }
+
+    fn python_playwright_executor(script_path: &Path) -> PlaywrightCliActionExecutor {
+        PlaywrightCliActionExecutor::with_args(
+            "python3",
+            [script_path.to_string_lossy().to_string()],
         )
-        .expect("write failing playwright cli");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(path).expect("stat").permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(path, perms).expect("chmod");
-        }
+        .expect("executor")
     }
 
     #[test]
@@ -647,8 +673,7 @@ raise SystemExit(2)
         write_mock_playwright_cli(&script_path);
         let session_file = script_path.with_extension("session");
 
-        let executor = PlaywrightCliActionExecutor::new(script_path.to_string_lossy().to_string())
-            .expect("executor");
+        let executor = python_playwright_executor(&script_path);
         let mut manager = BrowserSessionManager::new(executor);
         let summary = run_browser_automation_live_fixture(
             &fixture,
@@ -692,8 +717,7 @@ raise SystemExit(2)
         )
         .expect("fixture parse");
 
-        let executor = PlaywrightCliActionExecutor::new(script_path.to_string_lossy().to_string())
-            .expect("executor");
+        let executor = python_playwright_executor(&script_path);
         let mut manager = BrowserSessionManager::new(executor);
         let summary = run_browser_automation_live_fixture(
             &fixture,
@@ -719,10 +743,7 @@ raise SystemExit(2)
         let session_file = script_path.with_extension("session");
 
         let case = sample_case("cleanup-case", &format!("file://{}", page_path.display()));
-        let mut manager = BrowserSessionManager::new(
-            PlaywrightCliActionExecutor::new(script_path.to_string_lossy().to_string())
-                .expect("executor"),
-        );
+        let mut manager = BrowserSessionManager::new(python_playwright_executor(&script_path));
         let result = manager
             .execute_case(&case, &BrowserAutomationLivePolicy::default())
             .expect("execute case");

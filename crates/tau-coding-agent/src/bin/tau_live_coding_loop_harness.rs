@@ -27,7 +27,10 @@ use tau_agent_core::{
 };
 use tau_ai::{ChatRequest, ChatUsage, LlmClient, Message, ModelRef, PromptCacheConfig, Provider};
 use tau_cli::Cli;
-use tau_provider::{build_provider_client, CodexCliClient, CodexCliConfig};
+use tau_provider::{
+    build_provider_client, provider_api_key_candidates_with_inputs, resolve_api_key,
+    CodexCliClient, CodexCliConfig,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -94,6 +97,10 @@ struct Args {
     /// Mock provider response used for deterministic provider parsing tests.
     #[arg(long)]
     mock_provider_response: Option<String>,
+
+    /// Verifier command(s) for real-repo mode. Repeat once per command.
+    #[arg(long = "verifier-command")]
+    verifier_commands: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -102,6 +109,7 @@ enum HarnessMode {
     Resume,
     Blocked,
     ProviderSuccess,
+    RealRepo,
 }
 
 impl HarnessMode {
@@ -111,6 +119,7 @@ impl HarnessMode {
             Self::Resume => "resume",
             Self::Blocked => "blocked",
             Self::ProviderSuccess => "provider_success",
+            Self::RealRepo => "real_repo",
         }
     }
 }
@@ -197,7 +206,16 @@ struct ProviderUsageReport {
 }
 
 #[derive(Debug, Deserialize)]
-struct ProviderEditPayload {
+#[serde(untagged)]
+enum ProviderEditPayload {
+    Single(ProviderEditPayloadEntry),
+    Multi {
+        edits: Vec<ProviderEditPayloadEntry>,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderEditPayloadEntry {
     relative_path: String,
     contents: String,
     #[serde(default)]
@@ -205,7 +223,7 @@ struct ProviderEditPayload {
 }
 
 struct ProviderEditResolution {
-    edit: CodingMissionControlledEdit,
+    edits: Vec<CodingMissionControlledEdit>,
     report: ProviderProofReport,
 }
 
@@ -261,25 +279,45 @@ fn run(args: Args, fixture_path: PathBuf, started_unix_ms: u64) -> anyhow::Resul
         .with_context(|| format!("benchmark task '{}' not found", args.task_id))?;
     fs::create_dir_all(&args.state_root)
         .with_context(|| format!("create state root {}", args.state_root.display()))?;
-    prepare_disposable_repo(&args.repo_root)?;
+    if args.mode == HarnessMode::RealRepo {
+        if !args.repo_root.join(".git").exists() {
+            bail!("real-repo mode requires --repo-root to point at a git worktree");
+        }
+    } else {
+        prepare_disposable_repo(&args.repo_root)?;
+    }
 
     let mission_id = format!("{}-{}", args.run_id, args.mode.as_str());
-    let verifier_command = match args.mode {
-        HarnessMode::Success | HarnessMode::Resume | HarnessMode::ProviderSuccess => {
-            "grep -q pass status.txt"
+    let verifier_commands = match args.mode {
+        HarnessMode::RealRepo => {
+            if args.verifier_commands.is_empty() {
+                bail!("real-repo mode requires at least one --verifier-command");
+            }
+            args.verifier_commands.clone()
         }
-        HarnessMode::Blocked => "definitely-not-a-tau-command",
+        HarnessMode::Success | HarnessMode::Resume | HarnessMode::ProviderSuccess => {
+            vec!["grep -q pass status.txt".to_string()]
+        }
+        HarnessMode::Blocked => vec!["definitely-not-a-tau-command".to_string()],
     };
+    let base_branch = current_branch(&args.repo_root)
+        .with_context(|| format!("resolve current branch for {}", args.repo_root.display()))?;
     let config = CodingMissionConfig {
         state_root: args.state_root.clone(),
         mission_id: mission_id.clone(),
         session_key: format!("session-{mission_id}"),
         repo_path: args.repo_root.clone(),
-        issue_url: Some("https://github.com/njfio/Tau/issues/3654".to_string()),
+        issue_url: Some(match args.mode {
+            HarnessMode::RealRepo => "https://github.com/njfio/Tau/issues/3792".to_string(),
+            _ => "https://github.com/njfio/Tau/issues/3654".to_string(),
+        }),
         goal: task.goal.clone(),
-        base_branch: "master".to_string(),
-        branch_prefix: "codex/issue-3654-live-loop".to_string(),
-        verifier_commands: vec![verifier_command.to_string()],
+        base_branch,
+        branch_prefix: match args.mode {
+            HarnessMode::RealRepo => "codex/issue-3792-real-repo-harness".to_string(),
+            _ => "codex/issue-3654-live-loop".to_string(),
+        },
+        verifier_commands,
         pr_mode: CodingMissionPrMode::PrReady,
         allowed_roots: vec![args.repo_root.clone(), args.state_root.clone()],
         created_unix_ms: started_unix_ms,
@@ -311,14 +349,34 @@ fn run(args: Args, fixture_path: PathBuf, started_unix_ms: u64) -> anyhow::Resul
             &mut provider_report,
             started_unix_ms,
         )?,
+        HarnessMode::RealRepo => run_provider_success_case(
+            &runner,
+            &mut state,
+            &args,
+            &mission_id,
+            &mut provider_report,
+            started_unix_ms,
+        )?,
     };
     let pr_ready = if state.phase == CodingMissionPhase::PrReady {
+        let (title, risk_notes, rollback_notes) = match args.mode {
+            HarnessMode::RealRepo => (
+                "M334 real-repo autonomous coding harness".to_string(),
+                vec!["Risk: temporary real repository worktree validation only".to_string()],
+                vec!["Rollback: remove the harness branch/worktree".to_string()],
+            ),
+            _ => (
+                "M334 live coding loop fixture".to_string(),
+                vec!["Risk: disposable local fixture only".to_string()],
+                vec!["Rollback: delete the disposable repo".to_string()],
+            ),
+        };
         Some(
             state
                 .prepare_pr_ready_bundle(CodingMissionPrReadyRequest {
-                    title: Some("M334 live coding loop fixture".to_string()),
-                    risk_notes: vec!["Risk: disposable local fixture only".to_string()],
-                    rollback_notes: vec!["Rollback: delete the disposable repo".to_string()],
+                    title: Some(title),
+                    risk_notes,
+                    rollback_notes,
                     allow_draft_pr: false,
                     github_env: BTreeMap::new(),
                     gh_binary: None,
@@ -357,6 +415,7 @@ fn run_success_case(
             state,
             CodingMissionRunRequest {
                 controlled_edit: Some(edit),
+                controlled_edits: Vec::new(),
                 commit_message: commit_message.to_string(),
                 started_unix_ms: started_unix_ms + 1_000,
             },
@@ -374,6 +433,7 @@ fn run_resume_case(
             state,
             CodingMissionRunRequest {
                 controlled_edit: None,
+                controlled_edits: Vec::new(),
                 commit_message: "Make M334 live verifier green".to_string(),
                 started_unix_ms: started_unix_ms + 2_000,
             },
@@ -389,6 +449,7 @@ fn run_resume_case(
             state_root: state.state_root.clone(),
             mission_id: state.mission_id.clone(),
             controlled_edit: Some(pass_status_edit("controlled_fix_after_live_resume")),
+            controlled_edits: Vec::new(),
             commit_message: "Make M334 live verifier green after resume".to_string(),
             started_unix_ms: started_unix_ms + 3_000,
             stop_after: None,
@@ -415,6 +476,7 @@ fn run_blocked_case(
             state,
             CodingMissionRunRequest {
                 controlled_edit: None,
+                controlled_edits: Vec::new(),
                 commit_message: "Blocked verifier should not commit".to_string(),
                 started_unix_ms: started_unix_ms + 4_000,
             },
@@ -435,6 +497,7 @@ fn run_provider_success_case(
             state,
             CodingMissionRunRequest {
                 controlled_edit: None,
+                controlled_edits: Vec::new(),
                 commit_message: "Make M334 live verifier green with provider edit".to_string(),
                 started_unix_ms: started_unix_ms + 1_000,
             },
@@ -448,12 +511,14 @@ fn run_provider_success_case(
         .with_context(|| format!("resolve provider edit for {mission_id}"))?
     {
         ProviderEditOutcome::Ready(resolved) => {
-            *provider_report = Some(resolved.report);
+            let ProviderEditResolution { edits, report } = resolved;
+            *provider_report = Some(report);
             let resumed = runner
                 .resume(CodingMissionResumeRequest {
                     state_root: state.state_root.clone(),
                     mission_id: state.mission_id.clone(),
-                    controlled_edit: Some(resolved.edit),
+                    controlled_edit: None,
+                    controlled_edits: edits,
                     commit_message: "Make M334 live verifier green with provider edit".to_string(),
                     started_unix_ms: started_unix_ms + 2_000,
                     stop_after: None,
@@ -612,8 +677,17 @@ fn provider_cli(args: &Args, model_ref: &ModelRef) -> anyhow::Result<Cli> {
         "--provider-retry-budget-ms".to_string(),
         "0".to_string(),
     ];
-    if auth_mode != "api-key" {
+    if !provider_auth_mode_is_api_key(auth_mode) {
         cli_args.push("--provider-subscription-strict=true".to_string());
+    }
+    if provider_auth_mode_is_api_key(auth_mode) {
+        if let (Some(flag), Some(api_key)) = (
+            provider_api_key_flag(model_ref.provider),
+            provider_proof_api_key(model_ref.provider),
+        ) {
+            cli_args.push(flag.to_string());
+            cli_args.push(api_key);
+        }
     }
     match model_ref.provider {
         Provider::OpenAi | Provider::OpenRouter => {
@@ -665,19 +739,49 @@ fn provider_cli(args: &Args, model_ref: &ModelRef) -> anyhow::Result<Cli> {
     Cli::try_parse_from(cli_args).context("parse provider proof CLI config")
 }
 
+fn provider_auth_mode_is_api_key(auth_mode: &str) -> bool {
+    matches!(auth_mode.trim(), "api-key" | "api_key")
+}
+
+fn provider_api_key_flag(provider: Provider) -> Option<&'static str> {
+    match provider {
+        Provider::OpenAi | Provider::OpenRouter => Some("--openai-api-key"),
+        Provider::Anthropic => Some("--anthropic-api-key"),
+        Provider::Google => Some("--google-api-key"),
+    }
+}
+
+fn provider_proof_api_key(provider: Provider) -> Option<String> {
+    let candidates = provider_api_key_candidates_with_inputs(provider, None, None, None, None)
+        .into_iter()
+        .map(|(_source, value)| value)
+        .collect();
+    resolve_api_key(candidates)
+}
+
 fn provider_prompt(state: &CodingMissionState) -> anyhow::Result<String> {
     let status_path = state.repo_path.join("status.txt");
-    let current_status = fs::read_to_string(&status_path)
-        .with_context(|| format!("read fixture status {}", status_path.display()))?;
+    let current_status = match fs::read_to_string(&status_path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            format!("{} is absent in this repository.\n", status_path.display())
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("read fixture status {}", status_path.display()));
+        }
+    };
     Ok(format!(
-        "Goal:\n{}\n\nCurrent file status.txt contains:\n{}\n\nVerifier command:\n{}\n\nReturn exactly this JSON shape with the minimal edit needed to make the verifier pass:\n{{\"relative_path\":\"status.txt\",\"contents\":\"pass\\n\",\"reason_code\":\"provider_fix_for_live_loop\"}}",
+        "Goal:\n{}\n\nRepository root:\n{}\n\nCurrent file status.txt context:\n{}\n\nVerifier commands:\n{}\n\nReturn valid JSON only. Use either the legacy single-edit shape or this multi-edit shape:\n{{\"edits\":[{{\"relative_path\":\"path/from/repo/root\",\"contents\":\"file contents\",\"reason_code\":\"provider_fix\"}}]}}",
         state.goal,
+        state.repo_path.display(),
         current_status,
         state
             .verifier_commands
-            .first()
+            .iter()
             .map(String::as_str)
-            .unwrap_or("grep -q pass status.txt")
+            .collect::<Vec<_>>()
+            .join("\n")
     ))
 }
 
@@ -693,8 +797,10 @@ fn provider_edit_from_response(
     let response_text_sha256 = sha256_hex(response_text.as_bytes());
     let usage_report = usage.as_ref().map(provider_usage_report);
     match serde_json::from_str::<ProviderEditPayload>(response_text.trim()) {
-        Ok(payload) => match provider_payload_to_edit(payload) {
-            Ok(edit) => {
+        Ok(payload) => match provider_payload_to_edits(payload) {
+            Ok(edits) => {
+                let edit_relative_path = provider_edit_paths_summary(&edits);
+                let edit_reason_code = provider_edit_reason_summary(&edits);
                 let report = ProviderProofReport {
                     mode,
                     provider: model_ref.provider.as_str().to_string(),
@@ -706,11 +812,11 @@ fn provider_edit_from_response(
                     usage: usage_report,
                     response_text_bytes: Some(response_text_bytes),
                     response_text_sha256: Some(response_text_sha256),
-                    edit_relative_path: Some(edit.relative_path.display().to_string()),
-                    edit_reason_code: Some(edit.reason_code.clone()),
+                    edit_relative_path: Some(edit_relative_path),
+                    edit_reason_code: Some(edit_reason_code),
                     error: None,
                 };
-                ProviderEditOutcome::Ready(ProviderEditResolution { edit, report })
+                ProviderEditOutcome::Ready(ProviderEditResolution { edits, report })
             }
             Err(error) => {
                 ProviderEditOutcome::Failed(provider_failure_report(ProviderFailureReportInput {
@@ -740,15 +846,28 @@ fn provider_edit_from_response(
     }
 }
 
-fn provider_payload_to_edit(
+fn provider_payload_to_edits(
     payload: ProviderEditPayload,
+) -> Result<Vec<CodingMissionControlledEdit>, String> {
+    let entries = match payload {
+        ProviderEditPayload::Single(entry) => vec![entry],
+        ProviderEditPayload::Multi { edits } => edits,
+    };
+    if entries.is_empty() {
+        return Err("provider edit set must not be empty".to_string());
+    }
+    entries
+        .into_iter()
+        .map(provider_payload_entry_to_edit)
+        .collect()
+}
+
+fn provider_payload_entry_to_edit(
+    payload: ProviderEditPayloadEntry,
 ) -> Result<CodingMissionControlledEdit, String> {
     let relative_path = PathBuf::from(payload.relative_path.trim());
-    if relative_path.as_path() != Path::new("status.txt") {
-        return Err(format!(
-            "provider edit must target status.txt, got {}",
-            relative_path.display()
-        ));
+    if relative_path.as_os_str().is_empty() {
+        return Err("provider edit path must not be empty".to_string());
     }
     if relative_path.is_absolute()
         || relative_path.components().any(|component| {
@@ -763,7 +882,7 @@ fn provider_payload_to_edit(
         return Err("provider edit path escapes the disposable repo".to_string());
     }
     let mut contents = payload.contents;
-    if contents.trim() != "pass" {
+    if relative_path.as_path() == Path::new("status.txt") && contents.trim() != "pass" {
         return Err("provider edit contents must make status.txt contain pass".to_string());
     }
     if !contents.ends_with('\n') {
@@ -779,6 +898,22 @@ fn provider_payload_to_edit(
         contents,
         reason_code,
     })
+}
+
+fn provider_edit_paths_summary(edits: &[CodingMissionControlledEdit]) -> String {
+    edits
+        .iter()
+        .map(|edit| edit.relative_path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn provider_edit_reason_summary(edits: &[CodingMissionControlledEdit]) -> String {
+    edits
+        .iter()
+        .map(|edit| edit.reason_code.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn provider_failure_report(input: ProviderFailureReportInput<'_>) -> ProviderProofReport {
@@ -846,6 +981,25 @@ fn redact_secret_like_tokens(text: &str) -> String {
         .join(" ")
 }
 
+fn provider_report_satisfies_mode(mode: HarnessMode, report: Option<&ProviderProofReport>) -> bool {
+    match mode {
+        HarnessMode::ProviderSuccess => report
+            .map(|report| {
+                report.dispatched
+                    && report.parse_status == "parsed"
+                    && matches!(
+                        report.edit_relative_path.as_deref(),
+                        Some(paths) if paths.split(',').any(|path| path == "status.txt")
+                    )
+            })
+            .unwrap_or(false),
+        HarnessMode::RealRepo => report
+            .map(|report| report.dispatched && report.parse_status == "parsed")
+            .unwrap_or(false),
+        HarnessMode::Success | HarnessMode::Resume | HarnessMode::Blocked => true,
+    }
+}
+
 fn build_report(input: LiveLoopReportInput<'_>) -> LiveLoopReport {
     let commit = input
         .state
@@ -883,7 +1037,10 @@ fn build_report(input: LiveLoopReportInput<'_>) -> LiveLoopReport {
     });
     let mut failure_reasons = Vec::new();
     let passed = match input.mode {
-        HarnessMode::Success | HarnessMode::Resume | HarnessMode::ProviderSuccess => {
+        HarnessMode::Success
+        | HarnessMode::Resume
+        | HarnessMode::ProviderSuccess
+        | HarnessMode::RealRepo => {
             let ok = input.state.phase == CodingMissionPhase::PrReady
                 && pr_ready_report.is_some()
                 && commit
@@ -895,21 +1052,14 @@ fn build_report(input: LiveLoopReportInput<'_>) -> LiveLoopReport {
                 && verifier_transcript
                     .iter()
                     .any(|evidence| evidence.status == "succeeded")
-                && (input.mode != HarnessMode::ProviderSuccess
-                    || input
-                        .provider
-                        .as_ref()
-                        .map(|report| {
-                            report.dispatched
-                                && report.parse_status == "parsed"
-                                && report.edit_relative_path.as_deref() == Some("status.txt")
-                        })
-                        .unwrap_or(false));
+                && provider_report_satisfies_mode(input.mode, input.provider.as_ref())
+                && (input.mode != HarnessMode::RealRepo || changed_files.len() >= 2);
             if !ok {
                 failure_reasons.push(match input.mode {
                     HarnessMode::ProviderSuccess => {
                         "provider_success_case_missing_required_evidence".to_string()
                     }
+                    HarnessMode::RealRepo => "real_repo_case_missing_required_evidence".to_string(),
                     HarnessMode::Success | HarnessMode::Resume => {
                         "success_or_resume_case_missing_required_evidence".to_string()
                     }
@@ -1078,7 +1228,42 @@ fn now_unix_ms() -> u64 {
 
 #[cfg(test)]
 mod provider_backed_tests {
+    use std::sync::{Mutex, OnceLock};
+
     use super::*;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn restore_env(name: &str, prior: Option<String>) {
+        match prior {
+            Some(value) => std::env::set_var(name, value),
+            None => std::env::remove_var(name),
+        }
+    }
+
+    fn provider_test_args(provider_model: &str) -> Args {
+        Args {
+            fixture: None,
+            task_id: "repo_spec_to_pr_feature_delivery".to_string(),
+            mode: HarnessMode::ProviderSuccess,
+            state_root: PathBuf::from("state"),
+            repo_root: PathBuf::from("repo"),
+            output: PathBuf::from("report.json"),
+            run_id: "provider-test".to_string(),
+            started_unix_ms: None,
+            provider_model: provider_model.to_string(),
+            provider_api_base: None,
+            provider_auth_mode: "api-key".to_string(),
+            provider_timeout_ms: 120_000,
+            provider_max_retries: 1,
+            provider_max_tokens: 1_024,
+            mock_provider_response: None,
+            verifier_commands: Vec::new(),
+        }
+    }
 
     #[test]
     fn provider_backed_parses_json_edit() {
@@ -1100,9 +1285,10 @@ mod provider_backed_tests {
         let ProviderEditOutcome::Ready(resolved) = outcome else {
             panic!("provider edit should parse");
         };
-        assert_eq!(resolved.edit.relative_path, PathBuf::from("status.txt"));
-        assert_eq!(resolved.edit.contents, "pass\n");
-        assert_eq!(resolved.edit.reason_code, "provider_test");
+        assert_eq!(resolved.edits.len(), 1);
+        assert_eq!(resolved.edits[0].relative_path, PathBuf::from("status.txt"));
+        assert_eq!(resolved.edits[0].contents, "pass\n");
+        assert_eq!(resolved.edits[0].reason_code, "provider_test");
         assert_eq!(resolved.report.parse_status, "parsed");
         assert_eq!(
             resolved.report.edit_relative_path.as_deref(),
@@ -1117,6 +1303,36 @@ mod provider_backed_tests {
             Some(18)
         );
         assert!(resolved.report.response_text_sha256.is_some());
+    }
+
+    #[test]
+    fn provider_backed_parses_json_edit_array() {
+        let model_ref = ModelRef::parse("openai/test-model").expect("model parses");
+        let outcome = provider_edit_from_response(
+            "mock",
+            &model_ref,
+            true,
+            Some("stop".to_string()),
+            None,
+            r#"{"edits":[{"relative_path":"status.txt","contents":"pass","reason_code":"provider_status"},{"relative_path":"docs/notes.txt","contents":"helper\n","reason_code":"provider_notes"}]}"#,
+        );
+
+        let ProviderEditOutcome::Ready(resolved) = outcome else {
+            panic!("provider edit array should parse");
+        };
+        assert_eq!(resolved.edits.len(), 2);
+        assert_eq!(resolved.edits[0].relative_path, PathBuf::from("status.txt"));
+        assert_eq!(resolved.edits[0].contents, "pass\n");
+        assert_eq!(
+            resolved.edits[1].relative_path,
+            PathBuf::from("docs/notes.txt")
+        );
+        assert_eq!(resolved.edits[1].contents, "helper\n");
+        assert_eq!(resolved.report.parse_status, "parsed");
+        assert_eq!(
+            resolved.report.edit_relative_path.as_deref(),
+            Some("status.txt,docs/notes.txt")
+        );
     }
 
     #[test]
@@ -1151,6 +1367,28 @@ mod provider_backed_tests {
         assert_eq!(report.parse_status, "invalid_edit");
         assert_eq!(report.reason_code, "provider_edit_invalid");
         assert!(report.edit_relative_path.is_none());
+    }
+
+    #[test]
+    fn provider_backed_openrouter_api_key_mode_injects_openrouter_key() {
+        let _guard = env_lock().lock().expect("env lock");
+        let prior_openrouter = std::env::var("OPENROUTER_API_KEY").ok();
+        let prior_tau_openrouter = std::env::var("TAU_OPENROUTER_API_KEY").ok();
+        let prior_openai = std::env::var("OPENAI_API_KEY").ok();
+
+        std::env::set_var("OPENROUTER_API_KEY", "test-openrouter-key");
+        std::env::remove_var("TAU_OPENROUTER_API_KEY");
+        std::env::remove_var("OPENAI_API_KEY");
+
+        let args = provider_test_args("openrouter/deepseek/deepseek-v4-flash");
+        let model_ref = ModelRef::parse(&args.provider_model).expect("model parses");
+        let cli = provider_cli(&args, &model_ref).expect("provider cli");
+
+        assert_eq!(cli.openai_api_key.as_deref(), Some("test-openrouter-key"));
+
+        restore_env("OPENROUTER_API_KEY", prior_openrouter);
+        restore_env("TAU_OPENROUTER_API_KEY", prior_tau_openrouter);
+        restore_env("OPENAI_API_KEY", prior_openai);
     }
 
     #[test]
