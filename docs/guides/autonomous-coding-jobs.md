@@ -268,6 +268,21 @@ so a vague or no-authority issue becomes a concrete contract instead of a generi
 failure. These plans are intentionally not mutation authority; Tau still blocks
 until a verifier and edit/provider authority are supplied.
 
+Intake records also expose a queue-friendly clarifying contract:
+
+- `decision`: `ready_to_run`, `needs_authority`, `needs_clarification`,
+  `split_required`, `blocked_unsafe`, `missing_credentials`, or `unknown`.
+- `clarifying_questions`: structured rows with `reason_code`, `question`, and
+  `required_input`.
+
+This lets an operator or scheduler ask the exact missing question instead of
+parsing prose. For example, an underspecified issue records questions for
+`expected_behavior`, `current_behavior`, `affected_surface`, and
+`verifier_command`; an over-broad issue asks for `bounded_surface` and
+`single_acceptance_criterion`. A `ready_to_run` decision only appears when the
+intake path already has verifier, edit/provider authority, and required
+credentials.
+
 Draft PR behavior is evidence-backed. In draft mode Tau checks for an existing
 PR for the job branch, updates it when found, creates a draft PR when GitHub auth
 and `gh` are available, and records stdout/stderr/exit status in the mission
