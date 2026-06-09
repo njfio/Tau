@@ -46,10 +46,13 @@ contract-driven; full workspace membership is in [`Cargo.toml`](Cargo.toml).
   produce PR-ready evidence.
 - Provider-backed coding flows where a configured model supplies edits,
   verifier failures are fed back with stdout/stderr and git diff, and Tau reruns
-  the repair loop within a bounded budget.
+  the repair loop within a bounded budget. OpenRouter-compatible repair is a
+  built-in adapter that reads local env/`.env` configuration and stores
+  sanitized provider-call metadata.
 - Background autonomous coding job records with submit/run/replay/recover/status
-  commands, plus guarded GitHub auto-merge requests when explicit policy, GitHub
-  auth, PR URL, and branch protections allow it.
+  commands, operator recovery classification, `mark-blocked`, plus guarded
+  GitHub auto-merge requests when explicit policy, GitHub auth, PR URL, and
+  branch protections allow it.
 - A one-command `issue-to-merge` loop that ingests issue context, runs a durable
   coding job, produces PR-ready or draft-PR evidence, and optionally requests
   protected-branch-safe auto-merge.
@@ -81,7 +84,9 @@ What is landed:
   PR-ready or draft-PR publication, and optional auto-merge request in one
   command.
 - Arbitrary issue intake without verifier/edit authority produces a durable
-  blocked authority plan instead of mutating the repository.
+  blocked authority plan instead of mutating the repository. Intake now
+  classifies blockers such as unsafe, too broad, underspecified, missing
+  verifier, missing edit/provider authority, and missing credentials.
 
 What is still product work:
 
@@ -89,8 +94,8 @@ What is still product work:
   steering when no verifier/edit authority has been supplied,
 - a polished command-center UX for durable stuck-job recovery, replay, and
   crash-resume across every coding path,
-- automatic PR opening/merging as the default path rather than an explicit,
-  policy-gated operator action,
+- arbitrary spec/issue-to-PR work with automatic PR opening when verifier and
+  provider/edit authority are not supplied,
 - large-scale production policy optimization for RL.
 
 ## Operator Experience
@@ -120,13 +125,15 @@ the repo:
 | Fast local validation | `./scripts/dev/fast-validate.sh` | Formatting/build-focused developer loop |
 | Runtime claim boundary | `./scripts/dev/runtime-reality-gate.sh --output-json /tmp/tau-runtime-reality.json --output-md /tmp/tau-runtime-reality.md` | Deterministic product-claim check with explicit unsupported-claim boundaries |
 | Unified operator runtime | `./scripts/dev/prove-tau-product.sh --check --report /tmp/tau-product-proof-check.json` | Static proof for the unified product path |
+| Unified operator status | `scripts/run/test-tau-unified.sh` | Runtime status markers for jobs, provider repair, replay/recover state, stale leases, and mark-blocked command |
 | Full local coding lifecycle | `./scripts/dev/test-full-autonomous-coding-loop.sh` | Branch, RED verifier, fix, GREEN verifier, commit, PR-ready bundle, blocked-state evidence |
 | Real-repo coding harness | `./scripts/dev/test-real-repo-autonomous-coding-harness.sh` | Temporary worktree, multi-file edits, real git commit, PR-ready evidence |
 | Provider-backed coding | `TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh` | Configured-provider edit supply with RED/GREEN verifier and commit evidence |
 | Provider repair loop | `TAU_LIVE_PROVIDER_REPAIR_PROOF=1 ./scripts/dev/test-provider-verifier-repair-loop.sh` | Verifier failure -> targeted provider repair -> rerun -> PR-ready or blocked |
+| Built-in OpenRouter repair adapter | `scripts/dev/test-openrouter-repair-adapter.sh` | OpenRouter-compatible JSON-mode provider call -> strict repair contract -> durable issue-to-merge verifier repair, with sanitized metadata |
 | Guarded auto-merge/intake | `scripts/dev/test-autonomous-coding-automerge-intake.sh` | Protected-branch-safe auto-merge request gates and no-authority issue intake |
 | Issue-to-merge orchestration | `scripts/dev/test-autonomous-coding-issue-to-merge.sh` | One-command issue intake -> durable job -> verifier -> draft PR -> guarded auto-merge, plus no-authority block |
-| Autonomous coding gauntlet | `scripts/dev/test-autonomous-coding-gauntlet.sh` | Real fixture repos for provider full-file repair, unified diff repair, malformed provider block, missing verifier block, and safe auto-merge flags |
+| Autonomous coding gauntlet | `scripts/dev/test-autonomous-coding-gauntlet.sh` | Real fixture repos for provider full-file repair, unified diff repair, malformed provider block, missing verifier block, built-in OpenRouter-compatible repair, and safe auto-merge flags |
 | Gateway auth/session | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session lifecycle smoke path |
 | Operator maturity | `./scripts/verify/m295-operator-maturity-wave.sh` | TUI, RL, and auth maturity checks |
 
@@ -144,7 +151,7 @@ credentials, network access, and the configured model.
 | Prompt optimization/training | Integrated | Canonical training and rollout-state paths exist |
 | True RL | Integrated harness, not production policy ops | Deterministic rollout/GAE/PPO evidence exists; large-scale promotion operations are still expanding |
 | Dashboard/operator UX | Partial | Routes and diagnostics exist; polished command-center workflows are still being built |
-| Unified control plane | Partial | `tau-unified status` exposes broad runtime and autonomous coding job visibility; proactive recovery/replay UX is not complete |
+| Unified control plane | Partial | `tau-unified status` exposes broad runtime and autonomous coding job visibility, including stale lease/replay/recover/mark-blocked markers; proactive recovery/replay UX is not complete |
 | Autonomous coding | Partial but real | Controlled/provider-backed coding loops, durable provider repair, and authorized one-command issue-to-merge work; low-touch operation without supplied verifier/authority is intentionally blocked |
 
 ## Current Build Priorities
@@ -152,7 +159,7 @@ credentials, network access, and the configured model.
 - Make the autonomous coding loop more durable: stuck-job recovery, replay,
   crash-resume, and operator status that are easy to trust.
 - Harden provider-backed repair inside durable `issue-to-merge` jobs with larger
-  real-repo gauntlets, better live-provider adapters, and clearer blocked-state
+  real-repo gauntlets, broader live-provider adapters, and clearer blocked-state
   recovery.
 - Keep collapsing scattered entrypoints into the `tau-unified` operator
   experience.

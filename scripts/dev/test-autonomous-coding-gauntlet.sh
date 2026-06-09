@@ -278,4 +278,6 @@ assert "--admin" not in argv, argv
 print('{"suite":"autonomous_coding_gauntlet","passed":5,"failed":0}')
 PY
 
+"${REPO_ROOT}/scripts/dev/test-openrouter-repair-adapter.sh"
+
 printf 'autonomous_coding_gauntlet=pass\n'

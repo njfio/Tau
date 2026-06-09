@@ -16,10 +16,14 @@ use serde_json::json;
 use tau_agent_core::{CodingMissionControlledEdit, CodingMissionPrMode};
 use tau_runtime::{
     AutonomousCodingAutoMergeRequest, AutonomousCodingIssueIntakeRequest,
-    AutonomousCodingIssueToMergeRequest, AutonomousCodingJobReplayRequest,
-    AutonomousCodingJobRuntime, AutonomousCodingJobRuntimeConfig, AutonomousCodingJobSubmitRequest,
-    AutonomousCodingMergeMethod, AutonomousCodingProviderRepairPolicy,
+    AutonomousCodingIssueToMergeRequest, AutonomousCodingJobMarkBlockedRequest,
+    AutonomousCodingJobReplayRequest, AutonomousCodingJobRuntime, AutonomousCodingJobRuntimeConfig,
+    AutonomousCodingJobSubmitRequest, AutonomousCodingMergeMethod,
+    AutonomousCodingProviderRepairPolicy,
 };
+
+#[path = "tau_autonomous_coding_job/openrouter_repair_adapter.rs"]
+mod openrouter_repair_adapter;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -43,6 +47,8 @@ enum Command {
     Status(Box<JobStatusArgs>),
     /// Run the background-job stuck recovery sweep and refresh linked jobs.
     Recover(Box<JobRecoverArgs>),
+    /// Safely mark a job blocked with operator evidence.
+    MarkBlocked(Box<JobMarkBlockedArgs>),
     /// Request GitHub auto-merge for a PR-ready autonomous coding job.
     AutoMerge(Box<JobAutoMergeArgs>),
     /// Ingest an arbitrary issue without verifier/edit authority.
@@ -51,6 +57,8 @@ enum Command {
     IntakeStatus(Box<IssueIntakeStatusArgs>),
     /// Run issue intake through PR-ready output and optional guarded auto-merge.
     IssueToMerge(Box<IssueToMergeArgs>),
+    /// Built-in OpenRouter repair adapter for durable coding jobs.
+    OpenrouterRepairAdapter(Box<OpenrouterRepairAdapterArgs>),
 }
 
 #[derive(Debug, Parser)]
@@ -82,7 +90,7 @@ struct JobSubmitArgs {
     edits: Vec<String>,
     #[arg(long)]
     commit_message: String,
-    #[arg(long, value_enum, default_value = "pr-ready")]
+    #[arg(long, value_enum, default_value = "draft")]
     pr_mode: PrModeArg,
     #[arg(long)]
     enqueue_background_job: bool,
@@ -128,6 +136,20 @@ struct JobStatusArgs {
 struct JobRecoverArgs {
     #[command(flatten)]
     runtime: RuntimeArgs,
+}
+
+#[derive(Debug, Parser)]
+struct JobMarkBlockedArgs {
+    #[command(flatten)]
+    runtime: RuntimeArgs,
+    #[arg(long)]
+    job_id: String,
+    #[arg(long, default_value = "operator_marked_blocked")]
+    reason_code: String,
+    #[arg(long, default_value = "operator marked job blocked")]
+    detail: String,
+    #[arg(long)]
+    started_unix_ms: Option<u64>,
 }
 
 #[derive(Debug, Parser)]
@@ -211,7 +233,7 @@ struct IssueToMergeArgs {
     edits: Vec<String>,
     #[arg(long)]
     commit_message: Option<String>,
-    #[arg(long, value_enum, default_value = "pr-ready")]
+    #[arg(long, value_enum, default_value = "draft")]
     pr_mode: PrModeArg,
     #[arg(long)]
     timeout_ms: Option<u64>,
@@ -249,6 +271,36 @@ struct ProviderRepairArgs {
     provider_repair_provider: Option<String>,
     #[arg(long)]
     provider_repair_model: Option<String>,
+    #[arg(long)]
+    provider_repair_openrouter: bool,
+    #[arg(long)]
+    provider_repair_env_file: Option<PathBuf>,
+    #[arg(long)]
+    provider_repair_api_base: Option<String>,
+    #[arg(long, default_value_t = 120_000)]
+    provider_repair_timeout_ms: u64,
+    #[arg(long, default_value_t = 1_200)]
+    provider_repair_max_tokens: u32,
+    #[arg(long, default_value_t = 1)]
+    provider_repair_max_retries: usize,
+}
+
+#[derive(Debug, Parser)]
+struct OpenrouterRepairAdapterArgs {
+    #[arg(long)]
+    context: Option<PathBuf>,
+    #[arg(long)]
+    env_file: Option<PathBuf>,
+    #[arg(long)]
+    model: Option<String>,
+    #[arg(long)]
+    api_base: Option<String>,
+    #[arg(long, default_value_t = 120_000)]
+    request_timeout_ms: u64,
+    #[arg(long, default_value_t = 1_200)]
+    max_tokens: u32,
+    #[arg(long, default_value_t = 1)]
+    max_retries: usize,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -300,7 +352,7 @@ async fn run(args: Args) -> Result<()> {
                     pr_mode: args.pr_mode.into(),
                     allowed_roots,
                     controlled_edits: parse_edits(&args.edits)?,
-                    provider_repair: provider_repair_policy(&args.provider_repair),
+                    provider_repair: provider_repair_policy(&args.provider_repair)?,
                     commit_message: args.commit_message,
                     enqueue_background_job: args.enqueue_background_job,
                     timeout_ms: args.timeout_ms,
@@ -349,6 +401,17 @@ async fn run(args: Args) -> Result<()> {
                 },
                 "recovered_jobs": outcome.recovered_jobs,
             }))?;
+        }
+        Command::MarkBlocked(args) => {
+            let args = *args;
+            let runtime = runtime_from_args(&args.runtime)?;
+            let outcome = runtime.mark_job_blocked(AutonomousCodingJobMarkBlockedRequest {
+                job_id: args.job_id,
+                reason_code: args.reason_code,
+                detail: args.detail,
+                started_unix_ms: args.started_unix_ms.unwrap_or_else(now_unix_ms),
+            })?;
+            print_json(&outcome)?;
         }
         Command::AutoMerge(args) => {
             let args = *args;
@@ -415,7 +478,7 @@ async fn run(args: Args) -> Result<()> {
                     pr_mode: args.pr_mode.into(),
                     allowed_roots,
                     controlled_edits: parse_edits(&args.edits)?,
-                    provider_repair: provider_repair_policy(&args.provider_repair),
+                    provider_repair: provider_repair_policy(&args.provider_repair)?,
                     commit_message,
                     timeout_ms: args.timeout_ms,
                     allow_auto_merge: args.allow_auto_merge,
@@ -427,6 +490,21 @@ async fn run(args: Args) -> Result<()> {
                 })
                 .await?;
             print_json(&outcome)?;
+        }
+        Command::OpenrouterRepairAdapter(args) => {
+            let args = *args;
+            openrouter_repair_adapter::run_openrouter_repair_adapter(
+                openrouter_repair_adapter::OpenrouterRepairAdapterConfig {
+                    context_path: args.context,
+                    env_file: args.env_file,
+                    model: args.model,
+                    api_base: args.api_base,
+                    request_timeout_ms: args.request_timeout_ms,
+                    max_tokens: args.max_tokens,
+                    max_retries: args.max_retries,
+                },
+            )
+            .await?;
         }
     }
     Ok(())
@@ -466,15 +544,73 @@ fn parse_edits(raw_edits: &[String]) -> Result<Vec<CodingMissionControlledEdit>>
         .collect()
 }
 
-fn provider_repair_policy(args: &ProviderRepairArgs) -> AutonomousCodingProviderRepairPolicy {
-    AutonomousCodingProviderRepairPolicy {
+fn provider_repair_policy(
+    args: &ProviderRepairArgs,
+) -> Result<AutonomousCodingProviderRepairPolicy> {
+    if args.provider_repair_openrouter && args.provider_repair_command.is_some() {
+        return Err(anyhow!(
+            "--provider-repair-openrouter cannot be combined with --provider-repair-command"
+        ));
+    }
+
+    if args.provider_repair_openrouter {
+        let env_file = openrouter_repair_adapter::resolve_openrouter_env_file(
+            args.provider_repair_env_file.clone(),
+        );
+        let max_attempts = if args.provider_repair_attempts == 0 {
+            3
+        } else {
+            args.provider_repair_attempts
+        };
+        let model = openrouter_repair_adapter::resolve_openrouter_repair_model(
+            args.provider_repair_model.as_deref(),
+            env_file.as_deref(),
+        );
+        let mut adapter_args = vec![
+            "openrouter-repair-adapter".to_string(),
+            "--model".to_string(),
+            model.clone(),
+            "--request-timeout-ms".to_string(),
+            args.provider_repair_timeout_ms.max(1).to_string(),
+            "--max-tokens".to_string(),
+            args.provider_repair_max_tokens.max(1).to_string(),
+            "--max-retries".to_string(),
+            args.provider_repair_max_retries.to_string(),
+        ];
+        if let Some(env_file) = env_file.as_ref() {
+            adapter_args.push("--env-file".to_string());
+            adapter_args.push(env_file.display().to_string());
+        }
+        if let Some(api_base) = args
+            .provider_repair_api_base
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            adapter_args.push("--api-base".to_string());
+            adapter_args.push(api_base.to_string());
+        }
+        return Ok(AutonomousCodingProviderRepairPolicy {
+            enabled: true,
+            max_attempts,
+            command: Some(
+                std::env::current_exe()
+                    .unwrap_or_else(|_| PathBuf::from("tau_autonomous_coding_job")),
+            ),
+            args: adapter_args,
+            provider: Some("openrouter".to_string()),
+            model: Some(model),
+        });
+    }
+
+    Ok(AutonomousCodingProviderRepairPolicy {
         enabled: args.provider_repair_command.is_some() && args.provider_repair_attempts > 0,
         max_attempts: args.provider_repair_attempts,
         command: args.provider_repair_command.clone(),
         args: args.provider_repair_args.clone(),
         provider: args.provider_repair_provider.clone(),
         model: args.provider_repair_model.clone(),
-    }
+    })
 }
 
 fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {

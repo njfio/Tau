@@ -309,6 +309,13 @@ JSON
   "verifier_summary": "succeeded:coding_verifier_green",
   "changed_files": ["status.txt", "docs/notes.txt"],
   "resume_command": "tau-autonomous-coding-job run --job-id status-job",
+  "operator_state": "complete",
+  "operator_next_command": "none",
+  "replay_safe": false,
+  "recoverable": false,
+  "needs_authority": false,
+  "stale_lease": false,
+  "mark_blocked_command": "tau-autonomous-coding-job mark-blocked --state-dir ${test_autonomous_coding_state_dir} --job-id status-job --reason-code operator_marked_blocked",
   "pr_state": "draft_created",
   "pr_ready_command": "gh pr create --draft",
   "pr_url": "https://github.com/example/tau/pull/3802",
@@ -406,6 +413,13 @@ JSON
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.verifier=succeeded:coding_verifier_green" "status autonomous coding verifier"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.changed_files=status.txt,docs/notes.txt" "status autonomous coding changed files"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.resume_command=tau-autonomous-coding-job run --job-id status-job" "status autonomous coding resume"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.operator_state=complete" "status autonomous coding operator state"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.operator_next_command=none" "status autonomous coding operator next"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.replay_safe=false" "status autonomous coding replay safe"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.recoverable=false" "status autonomous coding recoverable"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.needs_authority=false" "status autonomous coding needs authority"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.stale_lease=false" "status autonomous coding stale lease"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.mark_blocked_command=tau-autonomous-coding-job mark-blocked --state-dir ${test_autonomous_coding_state_dir} --job-id status-job --reason-code operator_marked_blocked" "status autonomous coding mark blocked"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_state=draft_created" "status autonomous coding pr state"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_url=https://github.com/example/tau/pull/3802" "status autonomous coding pr url"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.auto_merge.status=requested" "status autonomous coding auto merge"

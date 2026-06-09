@@ -127,7 +127,41 @@ auto-merge request. If verifier commands or edit authority are missing, it
 falls back to a blocked issue-intake authority plan and does not mutate the
 repository.
 
-Run the same loop with provider repair authority instead of manual edits:
+Run the same loop with built-in OpenRouter-compatible repair authority instead
+of manual edits:
+
+```bash
+OPENROUTER_API_KEY=... cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- issue-to-merge \
+  --state-dir .tau/autonomous-coding \
+  --jobs-state-dir .tau/jobs \
+  --repo-path /path/to/repo \
+  --intake-id issue-123 \
+  --mission-id issue-123 \
+  --issue-url https://github.com/owner/repo/issues/123 \
+  --issue-title "Issue title" \
+  --issue-body "Issue body" \
+  --verifier-command "cargo test -p some-crate spec_c01" \
+  --provider-repair-openrouter \
+  --provider-repair-attempts 3 \
+  --provider-repair-model openrouter/qwen/qwen3-235b-a22b \
+  --commit-message "Make verifier green"
+```
+
+The built-in adapter reads provider configuration from flags, process env, or
+the nearest repo `.env`. API keys can be supplied as `OPENROUTER_API_KEY`,
+`TAU_OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `TAU_API_KEY`. Model names can be
+supplied with `--provider-repair-model`, `TAU_PROVIDER_REPAIR_MODEL`,
+`TAU_AUTONOMOUS_CODING_REPAIR_MODEL`, `TAU_PROVIDER_PROOF_MODEL`, or
+`TAU_OPENROUTER_MODEL`. Tau accepts `openrouter/<model>` as an operator-facing
+model label and sends `<model>` to the OpenRouter-compatible API.
+
+The adapter stores a sanitized metadata JSON file beside the durable repair
+context. It includes provider, model, API base, auth source name, usage and
+finish reason when returned, response hash, edit count, and failure summary when
+relevant. It never writes the API key.
+
+The command-adapter boundary is still available for other providers or local
+experiments:
 
 ```bash
 cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- issue-to-merge \
@@ -147,8 +181,8 @@ cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- issue-to-merge 
   --commit-message "Make verifier green"
 ```
 
-The repair command is an adapter boundary. Tau writes a sanitized repair context
-JSON file and invokes the adapter with:
+For custom adapters, Tau writes a sanitized repair context JSON file and invokes
+the adapter with:
 
 - `TAU_AUTONOMOUS_CODING_REPAIR_CONTEXT`: path to the context JSON,
 - `TAU_AUTONOMOUS_CODING_REPAIR_ATTEMPT`: one-based attempt index,
@@ -185,6 +219,32 @@ evidence, and PR-ready bundles stay in the durable job path.
 verifier summary, provider repair result, event log, heartbeat/lease, replay and
 recovery counts, PR state, and auto-merge state.
 
+The status JSON also classifies the operator action surface:
+
+- `operator_state`: `running`, `stale_lease`, `needs_authority`,
+  `safe_to_replay`, `blocked`, `failed`, or `complete`.
+- `operator_next_command`: the next safe command Tau recommends, such as
+  `tau-autonomous-coding-job recover` or `tau-autonomous-coding-job replay`.
+- `replay_safe`, `recoverable`, `needs_authority`, and `stale_lease`: booleans
+  for command-center displays.
+- `mark_blocked_command`: a safe command for an inspected job that should not
+  continue automatically.
+
+To stop a stale or inspected job without hand-editing state:
+
+```bash
+cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- mark-blocked \
+  --state-dir .tau/autonomous-coding \
+  --job-id <job-id> \
+  --reason-code operator_marked_blocked \
+  --detail "operator inspected job and marked it blocked"
+```
+
+Issue intake uses deterministic local classification. Blocked intake records can
+now report `unsafe`, `too_broad`, `underspecified`, `missing_verifier`,
+`missing_edit_or_provider_authority`, `missing_credentials`, or `solvable`,
+along with the exact verifier, edit/provider, or credential input still needed.
+
 ## Boundaries
 
 This loop prepares PR-ready evidence, can create a draft PR when draft mode and
@@ -192,5 +252,5 @@ GitHub auth are available, and can request GitHub auto-merge when explicit
 policy/auth/PR URL gates pass. It does not bypass protected branches, and it
 does not claim arbitrary issue solving without verifier commands plus either
 operator-supplied edits or bounded provider repair authority. Crash-resume and
-stuck-job recovery state is persisted and visible; the fully polished operator
-replay/recovery UX is still product work.
+stuck-job recovery state is persisted and classified; the fully polished
+operator replay/recovery UX is still product work.

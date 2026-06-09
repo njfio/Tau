@@ -328,6 +328,13 @@ write_default_autonomous_coding_snapshot_fields() {
   printf 'autonomous_coding_verifier=none\n'
   printf 'autonomous_coding_changed_files=none\n'
   printf 'autonomous_coding_resume_command=none\n'
+  printf 'autonomous_coding_operator_state=none\n'
+  printf 'autonomous_coding_operator_next_command=none\n'
+  printf 'autonomous_coding_replay_safe=false\n'
+  printf 'autonomous_coding_recoverable=false\n'
+  printf 'autonomous_coding_needs_authority=false\n'
+  printf 'autonomous_coding_stale_lease=false\n'
+  printf 'autonomous_coding_mark_blocked_command=none\n'
   printf 'autonomous_coding_pr_state=none\n'
   printf 'autonomous_coding_pr_url=none\n'
   printf 'autonomous_coding_auto_merge_status=none\n'
@@ -371,6 +378,8 @@ def clean(value, default="none"):
         value = default
     if isinstance(value, (list, tuple)):
         value = ",".join(clean(item, "") for item in value if clean(item, ""))
+    if isinstance(value, bool):
+        value = str(value).lower()
     value = str(value).replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
     return value if value else default
 
@@ -410,6 +419,13 @@ fields = {
     "autonomous_coding_verifier": state.get("verifier_summary"),
     "autonomous_coding_changed_files": state.get("changed_files") or [],
     "autonomous_coding_resume_command": state.get("resume_command"),
+    "autonomous_coding_operator_state": state.get("operator_state"),
+    "autonomous_coding_operator_next_command": state.get("operator_next_command"),
+    "autonomous_coding_replay_safe": state.get("replay_safe", False),
+    "autonomous_coding_recoverable": state.get("recoverable", False),
+    "autonomous_coding_needs_authority": state.get("needs_authority", False),
+    "autonomous_coding_stale_lease": state.get("stale_lease", False),
+    "autonomous_coding_mark_blocked_command": state.get("mark_blocked_command"),
     "autonomous_coding_pr_state": state.get("pr_state"),
     "autonomous_coding_pr_url": state.get("pr_url"),
     "autonomous_coding_auto_merge_status": state.get("auto_merge_status"),
@@ -519,6 +535,13 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.autonomous_coding.verifier=$(control_plane_snapshot_value autonomous_coding_verifier none)"
   log "tau-unified: control_plane.autonomous_coding.changed_files=$(control_plane_snapshot_value autonomous_coding_changed_files none)"
   log "tau-unified: control_plane.autonomous_coding.resume_command=$(control_plane_snapshot_value autonomous_coding_resume_command none)"
+  log "tau-unified: control_plane.autonomous_coding.operator_state=$(control_plane_snapshot_value autonomous_coding_operator_state none)"
+  log "tau-unified: control_plane.autonomous_coding.operator_next_command=$(control_plane_snapshot_value autonomous_coding_operator_next_command none)"
+  log "tau-unified: control_plane.autonomous_coding.replay_safe=$(control_plane_snapshot_value autonomous_coding_replay_safe false)"
+  log "tau-unified: control_plane.autonomous_coding.recoverable=$(control_plane_snapshot_value autonomous_coding_recoverable false)"
+  log "tau-unified: control_plane.autonomous_coding.needs_authority=$(control_plane_snapshot_value autonomous_coding_needs_authority false)"
+  log "tau-unified: control_plane.autonomous_coding.stale_lease=$(control_plane_snapshot_value autonomous_coding_stale_lease false)"
+  log "tau-unified: control_plane.autonomous_coding.mark_blocked_command=$(control_plane_snapshot_value autonomous_coding_mark_blocked_command none)"
   log "tau-unified: control_plane.autonomous_coding.pr_state=$(control_plane_snapshot_value autonomous_coding_pr_state none)"
   log "tau-unified: control_plane.autonomous_coding.pr_url=$(control_plane_snapshot_value autonomous_coding_pr_url none)"
   log "tau-unified: control_plane.autonomous_coding.auto_merge.status=$(control_plane_snapshot_value autonomous_coding_auto_merge_status none)"

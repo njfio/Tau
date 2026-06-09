@@ -200,6 +200,20 @@ pub enum AutonomousCodingIssueIntakeStatus {
     Blocked,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomousCodingIssueIntakeClassification {
+    Ready,
+    Solvable,
+    Underspecified,
+    Unsafe,
+    TooBroad,
+    #[default]
+    MissingVerifier,
+    MissingEditOrProviderAuthority,
+    MissingCredentials,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AutonomousCodingAuthorityRequirement {
     pub reason_code: String,
@@ -213,6 +227,10 @@ pub struct AutonomousCodingIssueIntakeOutcome {
     pub intake_id: String,
     pub status: AutonomousCodingIssueIntakeStatus,
     pub reason_code: String,
+    #[serde(default)]
+    pub classification: AutonomousCodingIssueIntakeClassification,
+    #[serde(default)]
+    pub classification_summary: String,
     pub issue_url: String,
     pub issue_title: String,
     pub issue_body_summary: String,
@@ -335,6 +353,20 @@ pub struct AutonomousCodingJobStatusSnapshot {
     pub verifier_summary: String,
     pub changed_files: Vec<String>,
     pub resume_command: String,
+    #[serde(default)]
+    pub operator_state: String,
+    #[serde(default)]
+    pub operator_next_command: String,
+    #[serde(default)]
+    pub replay_safe: bool,
+    #[serde(default)]
+    pub recoverable: bool,
+    #[serde(default)]
+    pub needs_authority: bool,
+    #[serde(default)]
+    pub stale_lease: bool,
+    #[serde(default)]
+    pub mark_blocked_command: String,
     pub pr_state: String,
     #[serde(default)]
     pub pr_ready_command: Option<String>,
@@ -403,6 +435,20 @@ pub struct AutonomousCodingJobRunOutcome {
     pub status: AutonomousCodingJobStatusSnapshot,
     #[serde(default)]
     pub pr_ready_bundle: Option<CodingMissionPrReadyBundle>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingJobMarkBlockedRequest {
+    pub job_id: String,
+    pub reason_code: String,
+    pub detail: String,
+    pub started_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingJobMarkBlockedOutcome {
+    pub record: AutonomousCodingJobRecord,
+    pub status: AutonomousCodingJobStatusSnapshot,
 }
 
 #[derive(Debug, Clone)]
@@ -561,11 +607,12 @@ impl AutonomousCodingJobRuntime {
     ) -> Result<AutonomousCodingIssueToMergeOutcome> {
         ensure_autonomous_coding_job_layout(&self.config.state_dir)?;
         let provider_repair_configured = request.provider_repair.is_configured();
-        if request.verifier_commands.is_empty()
-            || (request.controlled_edits.is_empty() && !provider_repair_configured)
-        {
-            let intake =
-                self.intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+        let has_verifier = !request.verifier_commands.is_empty();
+        let has_edit_or_provider_authority =
+            !request.controlled_edits.is_empty() || provider_repair_configured;
+        if !has_verifier || !has_edit_or_provider_authority {
+            let intake = self.intake_issue_with_context(
+                AutonomousCodingIssueIntakeRequest {
                     intake_id: request.intake_id,
                     issue_url: request.issue_url,
                     issue_title: request.issue_title,
@@ -573,7 +620,13 @@ impl AutonomousCodingJobRuntime {
                     repo_path: request.repo_path,
                     base_branch: request.base_branch,
                     started_unix_ms: request.started_unix_ms,
-                })?;
+                },
+                IssueIntakeAuthorityContext {
+                    has_verifier,
+                    has_edit_or_provider_authority,
+                    has_required_credentials: true,
+                },
+            )?;
             return Ok(AutonomousCodingIssueToMergeOutcome {
                 status: AutonomousCodingIssueToMergeStatus::Blocked,
                 reason_code: intake.reason_code.clone(),
@@ -851,30 +904,38 @@ impl AutonomousCodingJobRuntime {
         &self,
         request: AutonomousCodingIssueIntakeRequest,
     ) -> Result<AutonomousCodingIssueIntakeOutcome> {
+        self.intake_issue_with_context(
+            request,
+            IssueIntakeAuthorityContext {
+                has_verifier: false,
+                has_edit_or_provider_authority: false,
+                has_required_credentials: true,
+            },
+        )
+    }
+
+    fn intake_issue_with_context(
+        &self,
+        request: AutonomousCodingIssueIntakeRequest,
+        context: IssueIntakeAuthorityContext,
+    ) -> Result<AutonomousCodingIssueIntakeOutcome> {
         ensure_autonomous_coding_job_layout(&self.config.state_dir)?;
         let repo_path = canonicalize_existing_dir(request.repo_path.as_path())?;
+        let classification =
+            classify_issue_intake(&request.issue_title, &request.issue_body, context);
         let outcome = AutonomousCodingIssueIntakeOutcome {
             schema_version: AUTONOMOUS_CODING_JOB_SCHEMA_VERSION,
             intake_id: request.intake_id,
             status: AutonomousCodingIssueIntakeStatus::Blocked,
-            reason_code: "issue_intake_authority_required".to_string(),
+            reason_code: issue_intake_reason_code(classification.classification).to_string(),
+            classification: classification.classification,
+            classification_summary: classification.summary,
             issue_url: request.issue_url,
             issue_title: request.issue_title,
             issue_body_summary: summarize_issue_body(&request.issue_body),
             repo_path,
             base_branch: request.base_branch,
-            required_authority: vec![
-                AutonomousCodingAuthorityRequirement {
-                    reason_code: "verifier_authority_required".to_string(),
-                    summary: "A verifier command or acceptance test must be provided before code can be changed.".to_string(),
-                    required_input: "--verifier-command or spec-derived test command".to_string(),
-                },
-                AutonomousCodingAuthorityRequirement {
-                    reason_code: "edit_authority_required".to_string(),
-                    summary: "An edit plan, provider edit authority, or controlled edit set must be provided before mutation.".to_string(),
-                    required_input: "--edit, provider edit plan, or approved mutation authority".to_string(),
-                },
-            ],
+            required_authority: issue_intake_required_authority(context),
             created_unix_ms: request.started_unix_ms,
             updated_unix_ms: request.started_unix_ms,
         };
@@ -887,6 +948,41 @@ impl AutonomousCodingJobRuntime {
         intake_id: &str,
     ) -> Result<AutonomousCodingIssueIntakeOutcome> {
         load_autonomous_coding_issue_intake(&self.config.state_dir, intake_id)
+    }
+
+    pub fn mark_job_blocked(
+        &self,
+        request: AutonomousCodingJobMarkBlockedRequest,
+    ) -> Result<AutonomousCodingJobMarkBlockedOutcome> {
+        let mut record =
+            load_autonomous_coding_job_record(&self.config.state_dir, &request.job_id)?;
+        let reason_code = request.reason_code.trim();
+        let reason_code = if reason_code.is_empty() {
+            "operator_marked_blocked"
+        } else {
+            reason_code
+        };
+        let detail = request.detail.trim();
+        let detail = if detail.is_empty() {
+            "operator marked job blocked"
+        } else {
+            detail
+        };
+        record.status = AutonomousCodingJobStatus::Blocked;
+        record.reason_code = reason_code.to_string();
+        record.last_error = Some(detail.to_string());
+        record.lease_expires_unix_ms = None;
+        record.updated_unix_ms = request.started_unix_ms;
+        persist_autonomous_coding_job_record(&record)?;
+        append_autonomous_coding_job_event(
+            &record,
+            "job_marked_blocked",
+            reason_code,
+            detail,
+            request.started_unix_ms,
+        )?;
+        let status = self.refresh_status_snapshot(&record)?;
+        Ok(AutonomousCodingJobMarkBlockedOutcome { record, status })
     }
 
     fn block_auto_merge(
@@ -1244,6 +1340,30 @@ struct AutonomousCodingPrPublicationOptions {
     gh_binary: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct IssueIntakeAuthorityContext {
+    has_verifier: bool,
+    has_edit_or_provider_authority: bool,
+    has_required_credentials: bool,
+}
+
+#[derive(Debug, Clone)]
+struct IssueIntakeClassificationResult {
+    classification: AutonomousCodingIssueIntakeClassification,
+    summary: String,
+}
+
+#[derive(Debug, Clone)]
+struct AutonomousCodingOperatorStatus {
+    state: String,
+    next_command: String,
+    replay_safe: bool,
+    recoverable: bool,
+    needs_authority: bool,
+    stale_lease: bool,
+    mark_blocked_command: String,
+}
+
 pub fn autonomous_coding_job_record_path(state_dir: &Path, job_id: &str) -> PathBuf {
     state_dir
         .join("autonomous-coding-jobs")
@@ -1418,6 +1538,136 @@ fn load_autonomous_coding_job_records(state_dir: &Path) -> Result<Vec<Autonomous
     Ok(records)
 }
 
+fn build_operator_status(
+    record: &AutonomousCodingJobRecord,
+    state: &CodingMissionState,
+) -> AutonomousCodingOperatorStatus {
+    let stale_lease = record
+        .lease_expires_unix_ms
+        .is_some_and(|expires| expires <= current_unix_timestamp_ms())
+        && matches!(
+            record.status,
+            AutonomousCodingJobStatus::Queued
+                | AutonomousCodingJobStatus::Running
+                | AutonomousCodingJobStatus::Recovering
+        );
+    let replay_safe = state.resume_checkpoint.is_some()
+        && matches!(
+            record.status,
+            AutonomousCodingJobStatus::Running
+                | AutonomousCodingJobStatus::Recovering
+                | AutonomousCodingJobStatus::Blocked
+                | AutonomousCodingJobStatus::Failed
+        );
+    let needs_authority = record.status == AutonomousCodingJobStatus::Blocked
+        && matches!(
+            record.reason_code.as_str(),
+            AUTONOMOUS_CODING_JOB_REASON_WAITING_FOR_EDIT
+                | AUTONOMOUS_CODING_JOB_REASON_PROVIDER_REPAIR_EXHAUSTED
+        );
+    let recoverable = stale_lease || record.status == AutonomousCodingJobStatus::Recovering;
+    let mark_blocked_command = autonomous_coding_mark_blocked_command(record);
+
+    if stale_lease {
+        return AutonomousCodingOperatorStatus {
+            state: "stale_lease".to_string(),
+            next_command: autonomous_coding_recover_command(record),
+            replay_safe,
+            recoverable: true,
+            needs_authority,
+            stale_lease,
+            mark_blocked_command,
+        };
+    }
+
+    if needs_authority {
+        return AutonomousCodingOperatorStatus {
+            state: "needs_authority".to_string(),
+            next_command: if replay_safe {
+                autonomous_coding_replay_command(record)
+            } else {
+                mark_blocked_command.clone()
+            },
+            replay_safe,
+            recoverable,
+            needs_authority: true,
+            stale_lease,
+            mark_blocked_command,
+        };
+    }
+
+    if replay_safe && record.status == AutonomousCodingJobStatus::Failed {
+        return AutonomousCodingOperatorStatus {
+            state: "safe_to_replay".to_string(),
+            next_command: autonomous_coding_replay_command(record),
+            replay_safe,
+            recoverable,
+            needs_authority,
+            stale_lease,
+            mark_blocked_command,
+        };
+    }
+
+    let state_label = match record.status {
+        AutonomousCodingJobStatus::Queued
+        | AutonomousCodingJobStatus::Running
+        | AutonomousCodingJobStatus::Recovering => "running",
+        AutonomousCodingJobStatus::PrReady => "complete",
+        AutonomousCodingJobStatus::Blocked => "blocked",
+        AutonomousCodingJobStatus::Failed => "failed",
+    };
+    let next_command = match record.status {
+        AutonomousCodingJobStatus::Queued
+        | AutonomousCodingJobStatus::Running
+        | AutonomousCodingJobStatus::Recovering => autonomous_coding_status_command(record),
+        AutonomousCodingJobStatus::Blocked | AutonomousCodingJobStatus::Failed => {
+            mark_blocked_command.clone()
+        }
+        AutonomousCodingJobStatus::PrReady => "none".to_string(),
+    };
+
+    AutonomousCodingOperatorStatus {
+        state: state_label.to_string(),
+        next_command,
+        replay_safe,
+        recoverable,
+        needs_authority,
+        stale_lease,
+        mark_blocked_command,
+    }
+}
+
+fn autonomous_coding_status_command(record: &AutonomousCodingJobRecord) -> String {
+    format!(
+        "tau-autonomous-coding-job status --state-dir {} --job-id {}",
+        record.state_root.display(),
+        record.job_id
+    )
+}
+
+fn autonomous_coding_replay_command(record: &AutonomousCodingJobRecord) -> String {
+    format!(
+        "tau-autonomous-coding-job replay --state-dir {} --job-id {}",
+        record.state_root.display(),
+        record.job_id
+    )
+}
+
+fn autonomous_coding_recover_command(record: &AutonomousCodingJobRecord) -> String {
+    format!(
+        "tau-autonomous-coding-job recover --state-dir {}",
+        record.state_root.display()
+    )
+}
+
+fn autonomous_coding_mark_blocked_command(record: &AutonomousCodingJobRecord) -> String {
+    format!(
+        "tau-autonomous-coding-job mark-blocked --state-dir {} --job-id {} --reason-code operator_marked_blocked",
+        record.state_root.display(),
+        record.job_id
+    )
+}
+
 fn build_status_snapshot(
     record: &AutonomousCodingJobRecord,
     state: &CodingMissionState,
@@ -1463,6 +1713,7 @@ fn build_status_snapshot(
         });
     let latest_repair = record.provider_repair_evidence.last();
     let event_log_path = autonomous_coding_job_events_path(&record.state_root, &record.job_id);
+    let operator_status = build_operator_status(record, state);
     AutonomousCodingJobStatusSnapshot {
         schema_version: AUTONOMOUS_CODING_JOB_SCHEMA_VERSION,
         job_id: record.job_id.clone(),
@@ -1476,6 +1727,13 @@ fn build_status_snapshot(
         verifier_summary,
         changed_files,
         resume_command,
+        operator_state: operator_status.state,
+        operator_next_command: operator_status.next_command,
+        replay_safe: operator_status.replay_safe,
+        recoverable: operator_status.recoverable,
+        needs_authority: operator_status.needs_authority,
+        stale_lease: operator_status.stale_lease,
+        mark_blocked_command: operator_status.mark_blocked_command,
         pr_state,
         pr_ready_command: pr_ready_bundle.map(|bundle| bundle.manual_gh_pr_create_command.clone()),
         pr_url: pr_ready_bundle.and_then(|bundle| bundle.pr_url.clone()),
@@ -1575,6 +1833,144 @@ fn summarize_issue_body(body: &str) -> String {
     } else {
         summary.chars().take(240).collect()
     }
+}
+
+fn classify_issue_intake(
+    title: &str,
+    body: &str,
+    context: IssueIntakeAuthorityContext,
+) -> IssueIntakeClassificationResult {
+    let combined = format!("{title}\n{body}");
+    let normalized = combined.to_ascii_lowercase();
+    let word_count = combined.split_whitespace().count();
+
+    if contains_any(
+        &normalized,
+        &[
+            "bypass branch protection",
+            "--admin",
+            "force push",
+            "force-push",
+            "commit secret",
+            "leak secret",
+            "exfiltrate",
+        ],
+    ) {
+        return IssueIntakeClassificationResult {
+            classification: AutonomousCodingIssueIntakeClassification::Unsafe,
+            summary: "Issue requests unsafe authority or protected-branch bypass.".to_string(),
+        };
+    }
+
+    if contains_any(
+        &normalized,
+        &[
+            "all issues",
+            "any issue",
+            "everything",
+            "entire repo",
+            "whole repo",
+            "fully autonomous forever",
+        ],
+    ) {
+        return IssueIntakeClassificationResult {
+            classification: AutonomousCodingIssueIntakeClassification::TooBroad,
+            summary: "Issue scope is too broad for a bounded verifier-gated coding job."
+                .to_string(),
+        };
+    }
+
+    if word_count < 6 || body.trim().len() < 16 {
+        return IssueIntakeClassificationResult {
+            classification: AutonomousCodingIssueIntakeClassification::Underspecified,
+            summary: "Issue lacks enough concrete behavior or acceptance detail.".to_string(),
+        };
+    }
+
+    if !context.has_verifier {
+        return IssueIntakeClassificationResult {
+            classification: AutonomousCodingIssueIntakeClassification::MissingVerifier,
+            summary: "A verifier command or acceptance test is required before mutation."
+                .to_string(),
+        };
+    }
+
+    if !context.has_edit_or_provider_authority {
+        return IssueIntakeClassificationResult {
+            classification: AutonomousCodingIssueIntakeClassification::MissingEditOrProviderAuthority,
+            summary: "Edit authority, provider repair authority, or controlled edits are required before mutation."
+                .to_string(),
+        };
+    }
+
+    if !context.has_required_credentials {
+        return IssueIntakeClassificationResult {
+            classification: AutonomousCodingIssueIntakeClassification::MissingCredentials,
+            summary: "Required provider or GitHub credentials are missing.".to_string(),
+        };
+    }
+
+    IssueIntakeClassificationResult {
+        classification: AutonomousCodingIssueIntakeClassification::Solvable,
+        summary: "Issue has enough authority to enter the verifier-gated coding loop.".to_string(),
+    }
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn issue_intake_reason_code(
+    classification: AutonomousCodingIssueIntakeClassification,
+) -> &'static str {
+    match classification {
+        AutonomousCodingIssueIntakeClassification::Ready
+        | AutonomousCodingIssueIntakeClassification::Solvable
+        | AutonomousCodingIssueIntakeClassification::MissingVerifier
+        | AutonomousCodingIssueIntakeClassification::MissingEditOrProviderAuthority => {
+            "issue_intake_authority_required"
+        }
+        AutonomousCodingIssueIntakeClassification::Underspecified => "issue_intake_underspecified",
+        AutonomousCodingIssueIntakeClassification::Unsafe => "issue_intake_unsafe",
+        AutonomousCodingIssueIntakeClassification::TooBroad => "issue_intake_too_broad",
+        AutonomousCodingIssueIntakeClassification::MissingCredentials => {
+            "issue_intake_missing_credentials"
+        }
+    }
+}
+
+fn issue_intake_required_authority(
+    context: IssueIntakeAuthorityContext,
+) -> Vec<AutonomousCodingAuthorityRequirement> {
+    let mut required = Vec::new();
+    if !context.has_verifier {
+        required.push(AutonomousCodingAuthorityRequirement {
+            reason_code: "verifier_authority_required".to_string(),
+            summary:
+                "A verifier command or acceptance test must be provided before code can be changed."
+                    .to_string(),
+            required_input: "--verifier-command or spec-derived test command".to_string(),
+        });
+    }
+    if !context.has_edit_or_provider_authority {
+        required.push(AutonomousCodingAuthorityRequirement {
+            reason_code: "edit_authority_required".to_string(),
+            summary: "An edit plan, provider edit authority, or controlled edit set must be provided before mutation.".to_string(),
+            required_input: "--edit, --provider-repair-openrouter, --provider-repair-command, or approved mutation authority".to_string(),
+        });
+    }
+    if !context.has_required_credentials {
+        required.push(AutonomousCodingAuthorityRequirement {
+            reason_code: "credentials_required".to_string(),
+            summary:
+                "Provider or GitHub credentials must be configured before this job can continue."
+                    .to_string(),
+            required_input:
+                "OPENROUTER_API_KEY, GH_TOKEN, GITHUB_TOKEN, or provider-specific credential"
+                    .to_string(),
+        });
+    }
+    required
 }
 
 fn ensure_pr_ready_bundle(
@@ -1822,6 +2218,65 @@ mod tests {
         assert_ne!(status.resume_command, "none");
         assert_eq!(status.pr_state, "manual_ready");
         assert!(status.pr_ready_command.is_some());
+        assert_eq!(status.operator_state, "complete");
+        assert_eq!(status.operator_next_command, "none");
+        assert!(!status.replay_safe);
+        assert!(!status.recoverable);
+        assert!(!status.needs_authority);
+        assert!(!status.stale_lease);
+        assert!(status
+            .mark_blocked_command
+            .contains("tau-autonomous-coding-job mark-blocked"));
+    }
+
+    #[tokio::test]
+    async fn spec_3804_status_classifies_stale_lease_and_marks_blocked() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let submitted = runtime
+            .submit_job(fixture.submit_request(false, fixture.controlled_edits()))
+            .await
+            .expect("submit job");
+
+        let mut record = load_autonomous_coding_job_record(
+            runtime.config().state_dir.as_path(),
+            submitted.record.job_id.as_str(),
+        )
+        .expect("load record");
+        record.status = AutonomousCodingJobStatus::Running;
+        record.reason_code = AUTONOMOUS_CODING_JOB_REASON_RUNNING.to_string();
+        record.lease_expires_unix_ms = Some(1);
+        persist_autonomous_coding_job_record(&record).expect("persist stale record");
+
+        let status = runtime
+            .status(submitted.record.job_id.as_str())
+            .expect("stale status");
+        assert_eq!(status.operator_state, "stale_lease");
+        assert!(status.stale_lease);
+        assert!(status.recoverable);
+        assert!(status
+            .operator_next_command
+            .contains("tau-autonomous-coding-job recover"));
+        assert!(status
+            .mark_blocked_command
+            .contains("tau-autonomous-coding-job mark-blocked"));
+
+        let blocked = runtime
+            .mark_job_blocked(AutonomousCodingJobMarkBlockedRequest {
+                job_id: submitted.record.job_id.clone(),
+                reason_code: "operator_marked_blocked".to_string(),
+                detail: "operator stopped stale job after inspection".to_string(),
+                started_unix_ms: 6_000,
+            })
+            .expect("mark blocked");
+        assert_eq!(blocked.status.status, AutonomousCodingJobStatus::Blocked);
+        assert_eq!(blocked.status.operator_state, "blocked");
+        assert_eq!(blocked.status.reason_code, "operator_marked_blocked");
+        assert!(!blocked.status.stale_lease);
+        assert_eq!(
+            blocked.status.last_error.as_deref(),
+            Some("operator stopped stale job after inspection")
+        );
     }
 
     #[tokio::test]
@@ -1915,6 +2370,11 @@ mod tests {
             .expect("issue intake");
 
         assert_eq!(outcome.status, AutonomousCodingIssueIntakeStatus::Blocked);
+        assert_eq!(
+            outcome.classification,
+            AutonomousCodingIssueIntakeClassification::MissingVerifier
+        );
+        assert_eq!(outcome.reason_code, "issue_intake_authority_required");
         assert!(outcome
             .required_authority
             .iter()
@@ -1932,6 +2392,23 @@ mod tests {
             std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status after"),
             before_status
         );
+
+        let unsafe_outcome = runtime
+            .intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+                intake_id: "issue-3796-unsafe".to_string(),
+                issue_url: "https://github.com/njfio/Tau/issues/3796".to_string(),
+                issue_title: "Bypass branch protection".to_string(),
+                issue_body: "Use --admin to bypass branch protection and merge anyway.".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                base_branch: "master".to_string(),
+                started_unix_ms: 5_001,
+            })
+            .expect("unsafe issue intake");
+        assert_eq!(
+            unsafe_outcome.classification,
+            AutonomousCodingIssueIntakeClassification::Unsafe
+        );
+        assert_eq!(unsafe_outcome.reason_code, "issue_intake_unsafe");
     }
 
     #[tokio::test]
@@ -2041,7 +2518,19 @@ mod tests {
 
         assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::Blocked);
         assert_eq!(outcome.reason_code, "issue_intake_authority_required");
-        assert!(outcome.intake.is_some());
+        let intake = outcome.intake.as_ref().expect("intake");
+        assert_eq!(
+            intake.classification,
+            AutonomousCodingIssueIntakeClassification::MissingEditOrProviderAuthority
+        );
+        assert!(intake
+            .required_authority
+            .iter()
+            .any(|item| item.reason_code == "edit_authority_required"));
+        assert!(!intake
+            .required_authority
+            .iter()
+            .any(|item| item.reason_code == "verifier_authority_required"));
         assert!(outcome.submit.is_none());
         assert!(outcome.run.is_none());
         assert!(outcome.auto_merge.is_none());
