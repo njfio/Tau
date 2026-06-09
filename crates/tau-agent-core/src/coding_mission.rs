@@ -284,6 +284,16 @@ pub struct CodingMissionPrReadyBundle {
     pub pr_url: Option<String>,
     #[serde(default)]
     pub error_summary: Option<String>,
+    #[serde(default)]
+    pub draft_pr_reason_code: Option<String>,
+    #[serde(default)]
+    pub draft_pr_command_argv: Vec<String>,
+    #[serde(default)]
+    pub draft_pr_stdout_path: Option<PathBuf>,
+    #[serde(default)]
+    pub draft_pr_stderr_path: Option<PathBuf>,
+    #[serde(default)]
+    pub draft_pr_exit_status: Option<i32>,
     pub created_unix_ms: u64,
 }
 
@@ -735,6 +745,11 @@ impl CodingMissionState {
             rollback_notes: request.rollback_notes.clone(),
             pr_url: None,
             error_summary: None,
+            draft_pr_reason_code: None,
+            draft_pr_command_argv: Vec::new(),
+            draft_pr_stdout_path: None,
+            draft_pr_stderr_path: None,
+            draft_pr_exit_status: None,
             created_unix_ms: request.started_unix_ms,
         };
         self.mission.artifacts.push(MissionArtifactRef {
@@ -744,8 +759,14 @@ impl CodingMissionState {
             summary: Some("PR-ready bundle body".to_string()),
         });
 
-        if request.allow_draft_pr && github_auth_present(&request.github_env) {
-            publish_draft_pr(self, &request, &mut bundle)?;
+        if request.allow_draft_pr {
+            if github_auth_present(&request.github_env) {
+                publish_draft_pr(self, &request, &mut bundle)?;
+            } else {
+                bundle.draft_pr_reason_code = Some("draft_pr_missing_github_auth".to_string());
+                bundle.error_summary =
+                    Some("GitHub auth missing; use manual_gh_pr_create_command".to_string());
+            }
         }
 
         self.pr_ready_bundle = Some(bundle.clone());
@@ -893,39 +914,141 @@ fn publish_draft_pr(
         .as_ref()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| "gh".to_string());
-    let body_path = bundle.body_path.display().to_string();
-    let evidence = execute_workspace_command(
+    let list = execute_workspace_command_with_env(
         state,
         vec![
-            gh_binary,
+            gh_binary.clone(),
             "pr".to_string(),
-            "create".to_string(),
-            "--draft".to_string(),
+            "list".to_string(),
             "--head".to_string(),
             bundle.branch_name.clone(),
-            "--title".to_string(),
-            bundle.title.clone(),
-            "--body-file".to_string(),
-            body_path,
+            "--state".to_string(),
+            "open".to_string(),
+            "--json".to_string(),
+            "url".to_string(),
+            "--jq".to_string(),
+            ".[0].url".to_string(),
         ],
-        "gh_pr_create_draft".to_string(),
-        request.started_unix_ms.saturating_add(1),
+        "gh_pr_lookup_draft".to_string(),
+        request.started_unix_ms,
         false,
         true,
+        &request.github_env,
     )?;
+    if list.status != CodingWorkspaceCommandStatus::Succeeded {
+        bundle.status = CodingMissionPrPublicationStatus::DraftFailed;
+        bundle.error_summary = Some(command_evidence_summary(&list));
+        bundle.draft_pr_reason_code = Some("draft_pr_lookup_failed".to_string());
+        bundle.draft_pr_command_argv = list.argv.clone();
+        bundle.draft_pr_stdout_path = Some(list.stdout_path.clone());
+        bundle.draft_pr_stderr_path = Some(list.stderr_path.clone());
+        bundle.draft_pr_exit_status = list.exit_status;
+        return Ok(());
+    }
+
+    let existing_pr_url = command_stdout(&list)?
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && *line != "null")
+        .map(str::to_string);
+    let body_path = bundle.body_path.display().to_string();
+    let (reason_code, evidence) = if let Some(pr_url) = existing_pr_url.clone() {
+        (
+            "draft_pr_updated",
+            execute_workspace_command_with_env(
+                state,
+                vec![
+                    gh_binary,
+                    "pr".to_string(),
+                    "edit".to_string(),
+                    pr_url,
+                    "--title".to_string(),
+                    bundle.title.clone(),
+                    "--body-file".to_string(),
+                    body_path,
+                ],
+                "gh_pr_update_draft".to_string(),
+                request.started_unix_ms.saturating_add(1),
+                false,
+                true,
+                &request.github_env,
+            )?,
+        )
+    } else {
+        (
+            "draft_pr_created",
+            execute_workspace_command_with_env(
+                state,
+                vec![
+                    gh_binary,
+                    "pr".to_string(),
+                    "create".to_string(),
+                    "--draft".to_string(),
+                    "--head".to_string(),
+                    bundle.branch_name.clone(),
+                    "--title".to_string(),
+                    bundle.title.clone(),
+                    "--body-file".to_string(),
+                    body_path,
+                ],
+                "gh_pr_create_draft".to_string(),
+                request.started_unix_ms.saturating_add(1),
+                false,
+                true,
+                &request.github_env,
+            )?,
+        )
+    };
+
+    bundle.draft_pr_reason_code = Some(reason_code.to_string());
+    bundle.draft_pr_command_argv = evidence.argv.clone();
+    bundle.draft_pr_stdout_path = Some(evidence.stdout_path.clone());
+    bundle.draft_pr_stderr_path = Some(evidence.stderr_path.clone());
+    bundle.draft_pr_exit_status = evidence.exit_status;
+
     if evidence.status == CodingWorkspaceCommandStatus::Succeeded {
-        let stdout = command_stdout(&evidence)?;
-        bundle.pr_url = stdout
-            .lines()
-            .map(str::trim)
-            .find(|line| !line.is_empty())
-            .map(str::to_string);
+        bundle.pr_url = existing_pr_url.or_else(|| {
+            command_stdout(&evidence).ok().and_then(|stdout| {
+                stdout
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .map(str::to_string)
+            })
+        });
         bundle.status = CodingMissionPrPublicationStatus::DraftCreated;
     } else {
         bundle.status = CodingMissionPrPublicationStatus::DraftFailed;
         bundle.error_summary = Some(command_evidence_summary(&evidence));
     }
     Ok(())
+}
+
+fn execute_workspace_command_with_env<I, S>(
+    state: &mut CodingMissionState,
+    argv: I,
+    reason_code: String,
+    started_unix_ms: u64,
+    allow_mutation: bool,
+    allow_network: bool,
+    env: &BTreeMap<String, String>,
+) -> Result<CodingWorkspaceCommandEvidence, CodingMissionError>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let executor = CodingWorkspaceExecutor::new(CodingWorkspaceCommandPolicy {
+        allowed_roots: state.allowed_roots.clone(),
+        allow_network,
+        allow_mutation,
+    });
+    let command = CodingWorkspaceCommand {
+        cwd: state.repo_path.clone(),
+        argv: argv.into_iter().map(Into::into).collect(),
+        reason_code,
+        started_unix_ms,
+    };
+    executor.execute_with_env(state, command, env)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1764,6 +1887,15 @@ impl CodingWorkspaceExecutor {
         state: &mut CodingMissionState,
         command: CodingWorkspaceCommand,
     ) -> Result<CodingWorkspaceCommandEvidence, CodingMissionError> {
+        self.execute_with_env(state, command, &BTreeMap::new())
+    }
+
+    fn execute_with_env(
+        &self,
+        state: &mut CodingMissionState,
+        command: CodingWorkspaceCommand,
+        env: &BTreeMap<String, String>,
+    ) -> Result<CodingWorkspaceCommandEvidence, CodingMissionError> {
         let command_id = format!("cmd-{:04}", state.command_evidence.len().saturating_add(1));
         let stdout_path = coding_mission_command_artifact_path(
             &state.state_root,
@@ -1803,6 +1935,7 @@ impl CodingWorkspaceExecutor {
         let started = Instant::now();
         let output = Command::new(&command.argv[0])
             .args(command.argv.iter().skip(1))
+            .envs(env)
             .current_dir(&cwd)
             .output();
         let elapsed_ms = elapsed_ms_saturating(started);

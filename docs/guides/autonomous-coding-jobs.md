@@ -85,6 +85,25 @@ GH_TOKEN=... cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- au
 This invokes normal GitHub auto-merge behavior. It honors branch protections and
 required checks; it does not use admin bypass flags.
 
+The `tau-unified` operator surface wraps the same durable state and action
+commands:
+
+```bash
+scripts/run/tau-unified.sh jobs
+scripts/run/tau-unified.sh job <job-id>
+scripts/run/tau-unified.sh recover
+scripts/run/tau-unified.sh replay <job-id>
+scripts/run/tau-unified.sh block <job-id> \
+  --reason-code operator_marked_blocked \
+  --detail "operator inspected job and marked it blocked"
+```
+
+`jobs` lists each durable job with status, operator state, replay safety,
+recoverability, PR state, reason code, next command, and a plain resume
+explanation. `job <job-id>` expands the evidence: verifier summary, provider
+repair state, changed files, draft PR publication command/result, event log, and
+why replay or recovery is safe or unsafe.
+
 Ingest an arbitrary issue without verifier/edit authority:
 
 ```bash
@@ -244,6 +263,17 @@ Issue intake uses deterministic local classification. Blocked intake records can
 now report `unsafe`, `too_broad`, `underspecified`, `missing_verifier`,
 `missing_edit_or_provider_authority`, `missing_credentials`, or `solvable`,
 along with the exact verifier, edit/provider, or credential input still needed.
+They also persist `verifier_plan`, `missing_inputs`, and `next_action_summary`
+so a vague or no-authority issue becomes a concrete contract instead of a generic
+failure. These plans are intentionally not mutation authority; Tau still blocks
+until a verifier and edit/provider authority are supplied.
+
+Draft PR behavior is evidence-backed. In draft mode Tau checks for an existing
+PR for the job branch, updates it when found, creates a draft PR when GitHub auth
+and `gh` are available, and records stdout/stderr/exit status in the mission
+bundle. If auth is missing, the verified job remains PR-ready with
+`draft_pr_missing_github_auth` and the exact manual `gh pr create --draft`
+command.
 
 The broadest deterministic benchmark for this path is:
 
@@ -259,10 +289,10 @@ in the opt-in provider scripts.
 
 ## Boundaries
 
-This loop prepares PR-ready evidence, can create a draft PR when draft mode and
-GitHub auth are available, and can request GitHub auto-merge when explicit
-policy/auth/PR URL gates pass. It does not bypass protected branches, and it
-does not claim arbitrary issue solving without verifier commands plus either
-operator-supplied edits or bounded provider repair authority. Crash-resume and
-stuck-job recovery state is persisted and classified; the fully polished
-operator replay/recovery UX is still product work.
+This loop prepares PR-ready evidence, can create or update a draft PR when draft
+mode and GitHub auth are available, and can request GitHub auto-merge when
+explicit policy/auth/PR URL gates pass. It does not bypass protected branches,
+and it does not claim arbitrary issue solving without verifier commands plus
+either operator-supplied edits or bounded provider repair authority. Crash-resume
+and stuck-job recovery state is persisted, classified, and operable from
+`tau-unified`; graphical command-center polish is still product work.

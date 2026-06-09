@@ -183,6 +183,11 @@ fn save_operator_coding_mission_state(
             rollback_notes: Vec::new(),
             pr_url: Some("https://github.com/example/tau/pull/3654".to_string()),
             error_summary: None,
+            draft_pr_reason_code: None,
+            draft_pr_command_argv: Vec::new(),
+            draft_pr_stdout_path: None,
+            draft_pr_stderr_path: None,
+            draft_pr_exit_status: None,
             created_unix_ms: 270,
         });
     }
