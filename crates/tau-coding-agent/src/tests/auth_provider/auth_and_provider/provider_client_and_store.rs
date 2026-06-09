@@ -366,6 +366,7 @@ printf "codex api-key fallback response" > "$out"
         "MISTRAL_API_KEY",
         "AZURE_OPENAI_API_KEY",
         "TAU_API_KEY",
+        "TAU_PROVIDER_DISABLE_DOTENV_KEYS",
     ]);
     std::env::remove_var("OPENAI_API_KEY");
     std::env::remove_var("OPENROUTER_API_KEY");
@@ -374,6 +375,7 @@ printf "codex api-key fallback response" > "$out"
     std::env::remove_var("MISTRAL_API_KEY");
     std::env::remove_var("AZURE_OPENAI_API_KEY");
     std::env::remove_var("TAU_API_KEY");
+    std::env::set_var("TAU_PROVIDER_DISABLE_DOTENV_KEYS", "1");
 
     let client =
         build_provider_client(&cli, Provider::OpenAi).expect("build codex fallback client");
@@ -499,6 +501,7 @@ fn regression_build_provider_client_openai_api_key_mode_without_backend_keeps_mi
         "MISTRAL_API_KEY",
         "AZURE_OPENAI_API_KEY",
         "TAU_API_KEY",
+        "TAU_PROVIDER_DISABLE_DOTENV_KEYS",
     ]);
     std::env::remove_var("OPENAI_API_KEY");
     std::env::remove_var("OPENROUTER_API_KEY");
@@ -507,6 +510,7 @@ fn regression_build_provider_client_openai_api_key_mode_without_backend_keeps_mi
     std::env::remove_var("MISTRAL_API_KEY");
     std::env::remove_var("AZURE_OPENAI_API_KEY");
     std::env::remove_var("TAU_API_KEY");
+    std::env::set_var("TAU_PROVIDER_DISABLE_DOTENV_KEYS", "1");
 
     match build_provider_client(&cli, Provider::OpenAi) {
         Ok(_) => panic!("missing key without backend should fail"),

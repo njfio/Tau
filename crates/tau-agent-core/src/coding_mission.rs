@@ -3913,7 +3913,7 @@ mod tests {
         let fake_gh = temp.path().join("fake-gh");
         std::fs::write(
             &fake_gh,
-            "#!/bin/sh\nprintf 'https://github.com/njfio/Tau/pull/999\\n'\n",
+            "#!/bin/sh\nif [ \"$2\" = \"list\" ]; then exit 0; fi\nprintf 'https://github.com/njfio/Tau/pull/999\\n'\n",
         )
         .expect("write fake gh");
         #[cfg(unix)]
@@ -3945,6 +3945,10 @@ mod tests {
         assert_eq!(
             bundle.pr_url.as_deref(),
             Some("https://github.com/njfio/Tau/pull/999")
+        );
+        assert_eq!(
+            bundle.draft_pr_reason_code.as_deref(),
+            Some("draft_pr_created")
         );
         assert_eq!(
             state

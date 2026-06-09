@@ -1141,7 +1141,7 @@ fn parse_provider_edit_payload(
 ) -> Result<(ProviderEditPayload, &'static str), String> {
     let trimmed = response_text.trim();
     match serde_json::from_str::<ProviderEditPayload>(trimmed) {
-        Ok(payload) => return Ok((payload, "parsed")),
+        Ok(payload) => Ok((payload, "parsed")),
         Err(error) => {
             let direct_error = error;
             for candidate in provider_json_candidates(trimmed) {

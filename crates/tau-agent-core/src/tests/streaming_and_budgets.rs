@@ -695,7 +695,7 @@ async fn regression_retry_transient_request_failures_and_recover_response() {
 #[tokio::test]
 async fn regression_request_timeout_retries_and_recovers_when_next_attempt_is_fast() {
     let client = Arc::new(TimeoutThenSuccessClient {
-        delays_ms: AsyncMutex::new(VecDeque::from([40, 0])),
+        delays_ms: AsyncMutex::new(VecDeque::from([250, 0])),
         attempts: AsyncMutex::new(0),
         response: ChatResponse {
             message: Message::assistant_text("timeout-recovered"),
