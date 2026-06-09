@@ -72,7 +72,7 @@ require(
     f"changed files mismatch: {report['changed_files']}",
 )
 provider = report["provider"]
-require(provider["parse_status"] == "parsed", "provider parse status mismatch")
+require(provider["parse_status"] in {"parsed", "extracted_json"}, "provider parse status mismatch")
 paths = set(provider["edit_relative_path"].split(","))
 require(
     paths == {

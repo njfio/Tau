@@ -58,6 +58,8 @@ const MEMORY_SEARCH_MAX_LIMIT: usize = 50;
 const MEMORY_WRITE_MAX_SUMMARY_CHARS: usize = 1_200;
 const MEMORY_WRITE_MAX_FACTS: usize = 32;
 const MEMORY_WRITE_MAX_TAGS: usize = 32;
+const WRITE_MANY_MAX_FILES: usize = 32;
+const EDIT_MANY_MAX_EDITS: usize = 64;
 const MEMORY_WRITE_MAX_FACT_CHARS: usize = 400;
 const MEMORY_WRITE_MAX_TAG_CHARS: usize = 96;
 const MEMORY_EMBEDDING_TIMEOUT_MS_DEFAULT: u64 = 10_000;
@@ -122,7 +124,9 @@ const DEFAULT_PROTECTED_RELATIVE_PATHS: &[&str] = &[
 const BUILTIN_AGENT_TOOL_NAMES: &[&str] = &[
     "read",
     "write",
+    "write_many",
     "edit",
+    "edit_many",
     "memory_write",
     "memory_read",
     "memory_delete",
@@ -699,6 +703,217 @@ impl AgentTool for WriteTool {
     }
 }
 
+struct WriteManyFilePlan {
+    requested_path: String,
+    resolved: PathBuf,
+    content: String,
+    content_size: usize,
+}
+
+/// Public struct `WriteManyTool` used across Tau components.
+pub struct WriteManyTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl WriteManyTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for WriteManyTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "write_many".to_string(),
+            description: "Write multiple UTF-8 files in one checked batch, creating parent directories after every path passes policy".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": WRITE_MANY_MAX_FILES,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string" },
+                                "content": { "type": "string" }
+                            },
+                            "required": ["path", "content"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["files"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let files = match arguments.get("files").and_then(Value::as_array) {
+            Some(files) if !files.is_empty() => files,
+            Some(_) => {
+                return ToolExecutionResult::error(json!({
+                    "error": "files must include at least one entry"
+                }))
+            }
+            None => {
+                return ToolExecutionResult::error(json!({
+                    "error": "missing required array field 'files'"
+                }))
+            }
+        };
+        if files.len() > WRITE_MANY_MAX_FILES {
+            return ToolExecutionResult::error(json!({
+                "error": format!(
+                    "files contains {} entries, limit is {}",
+                    files.len(),
+                    WRITE_MANY_MAX_FILES
+                ),
+            }));
+        }
+
+        let mut seen_paths = BTreeSet::new();
+        let mut plans = Vec::with_capacity(files.len());
+        for (index, file) in files.iter().enumerate() {
+            let path = match required_string(file, "path") {
+                Ok(path) => path,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "error": error,
+                    }))
+                }
+            };
+            let content = match required_string(file, "content") {
+                Ok(content) => content,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "path": path,
+                        "error": error,
+                    }))
+                }
+            };
+            let content_size = content.len();
+            if content_size > self.policy.max_file_write_bytes {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": path,
+                    "error": format!(
+                        "content is too large ({} bytes), limit is {} bytes",
+                        content_size,
+                        self.policy.max_file_write_bytes
+                    ),
+                }));
+            }
+            let resolved = match resolve_and_validate_path(&path, &self.policy, PathMode::Write) {
+                Ok(path) => path,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "path": path,
+                        "error": error,
+                    }))
+                }
+            };
+            if !seen_paths.insert(resolved.clone()) {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": resolved.display().to_string(),
+                    "error": "duplicate write_many path",
+                }));
+            }
+            if let Err(error) = validate_file_target(
+                &resolved,
+                PathMode::Write,
+                self.policy.enforce_regular_files,
+            ) {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": resolved.display().to_string(),
+                    "error": error,
+                }));
+            }
+            if let Some(protected_path_result) =
+                evaluate_protected_path_gate(&self.policy, "write_many", &resolved)
+            {
+                return protected_path_result;
+            }
+            if let Some(rbac_result) = evaluate_tool_rbac_gate(
+                self.policy.rbac_principal.as_deref(),
+                "write_many",
+                self.policy.rbac_policy_path.as_deref(),
+                json!({
+                    "path": resolved.display().to_string(),
+                    "content_bytes": content_size,
+                }),
+            ) {
+                return rbac_result;
+            }
+            if let Some(approval_result) = evaluate_tool_approval_gate(ApprovalAction::ToolWrite {
+                path: resolved.display().to_string(),
+                content_bytes: content_size,
+            }) {
+                return approval_result;
+            }
+            if let Some(rate_limit_result) = evaluate_tool_rate_limit_gate(
+                &self.policy,
+                "write_many",
+                json!({
+                    "path": resolved.display().to_string(),
+                    "content_bytes": content_size,
+                }),
+            ) {
+                return rate_limit_result;
+            }
+
+            plans.push(WriteManyFilePlan {
+                requested_path: path,
+                resolved,
+                content,
+                content_size,
+            });
+        }
+
+        let mut written = Vec::with_capacity(plans.len());
+        let mut total_bytes = 0usize;
+        for plan in plans {
+            if let Some(parent) = plan.resolved.parent() {
+                if !parent.as_os_str().is_empty() {
+                    if let Err(error) = tokio::fs::create_dir_all(parent).await {
+                        return ToolExecutionResult::error(json!({
+                            "path": plan.resolved.display().to_string(),
+                            "error": format!("failed to create parent directory: {error}"),
+                        }));
+                    }
+                }
+            }
+
+            if let Err(error) = tokio::fs::write(&plan.resolved, plan.content.as_bytes()).await {
+                return ToolExecutionResult::error(json!({
+                    "path": plan.resolved.display().to_string(),
+                    "error": error.to_string(),
+                }));
+            }
+            total_bytes = total_bytes.saturating_add(plan.content_size);
+            written.push(json!({
+                "requested_path": plan.requested_path,
+                "path": plan.resolved.display().to_string(),
+                "bytes_written": plan.content_size,
+            }));
+        }
+
+        ToolExecutionResult::ok(json!({
+            "file_count": written.len(),
+            "bytes_written": total_bytes,
+            "files_written": written,
+        }))
+    }
+}
+
 /// Public struct `EditTool` used across Tau components.
 pub struct EditTool {
     policy: Arc<ToolPolicy>,
@@ -858,6 +1073,739 @@ impl AgentTool for EditTool {
             "replacements": replacements,
         }))
     }
+}
+
+struct EditManyFilePlan {
+    requested_path: String,
+    resolved: PathBuf,
+    updated: String,
+    patches: Vec<Value>,
+}
+
+/// Public struct `EditManyTool` used across Tau components.
+pub struct EditManyTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl EditManyTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+
+    async fn execute_unified_diff(&self, arguments: &Value) -> ToolExecutionResult {
+        let diff = match required_string(arguments, "diff") {
+            Ok(diff) => diff,
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        if diff.trim().is_empty() {
+            return ToolExecutionResult::error(json!({
+                "error": "'diff' must not be empty",
+            }));
+        }
+
+        let patches = match parse_edit_many_unified_diff(&diff) {
+            Ok(patches) => patches,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "error": error,
+                }))
+            }
+        };
+        let hunk_count = patches.iter().map(|patch| patch.hunks.len()).sum::<usize>();
+        if hunk_count == 0 {
+            return ToolExecutionResult::error(json!({
+                "error": "unified diff must include at least one hunk",
+            }));
+        }
+        if hunk_count > EDIT_MANY_MAX_EDITS {
+            return ToolExecutionResult::error(json!({
+                "error": format!(
+                    "diff contains {} hunks, limit is {}",
+                    hunk_count,
+                    EDIT_MANY_MAX_EDITS
+                ),
+            }));
+        }
+
+        let mut plans = BTreeMap::<PathBuf, EditManyFilePlan>::new();
+        let mut total_added_lines = 0usize;
+        let mut total_removed_lines = 0usize;
+        for (index, patch) in patches.iter().enumerate() {
+            let resolved =
+                match resolve_and_validate_path(&patch.path, &self.policy, PathMode::Edit) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "index": index,
+                            "path": patch.path,
+                            "error": error,
+                        }))
+                    }
+                };
+            if plans.contains_key(&resolved) {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": resolved.display().to_string(),
+                    "error": "duplicate unified diff file patch",
+                }));
+            }
+            if let Err(error) =
+                validate_file_target(&resolved, PathMode::Edit, self.policy.enforce_regular_files)
+            {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": resolved.display().to_string(),
+                    "error": error,
+                }));
+            }
+            if let Some(protected_path_result) =
+                evaluate_protected_path_gate(&self.policy, "edit_many", &resolved)
+            {
+                return protected_path_result;
+            }
+            if let Some(rbac_result) = evaluate_tool_rbac_gate(
+                self.policy.rbac_principal.as_deref(),
+                "edit_many",
+                self.policy.rbac_policy_path.as_deref(),
+                json!({
+                    "path": resolved.display().to_string(),
+                    "find": "<unified-diff>",
+                    "replace_bytes": diff.len(),
+                }),
+            ) {
+                return rbac_result;
+            }
+            if let Some(approval_result) = evaluate_tool_approval_gate(ApprovalAction::ToolEdit {
+                path: resolved.display().to_string(),
+                find: "<unified-diff>".to_string(),
+                replace_bytes: diff.len(),
+            }) {
+                return approval_result;
+            }
+            if let Some(rate_limit_result) = evaluate_tool_rate_limit_gate(
+                &self.policy,
+                "edit_many",
+                json!({
+                    "path": resolved.display().to_string(),
+                    "find": "<unified-diff>",
+                    "replace_bytes": diff.len(),
+                }),
+            ) {
+                return rate_limit_result;
+            }
+
+            let source = match tokio::fs::read_to_string(&resolved).await {
+                Ok(source) => source,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "path": resolved.display().to_string(),
+                        "error": error.to_string(),
+                    }))
+                }
+            };
+            let applied = match apply_edit_many_unified_file_patch(&source, patch) {
+                Ok(applied) => applied,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "path": resolved.display().to_string(),
+                        "error": error,
+                    }))
+                }
+            };
+            if applied.updated.len() > self.policy.max_file_write_bytes {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": resolved.display().to_string(),
+                    "error": format!(
+                        "edited content is too large ({} bytes), limit is {} bytes",
+                        applied.updated.len(),
+                        self.policy.max_file_write_bytes
+                    ),
+                }));
+            }
+            total_added_lines = total_added_lines.saturating_add(applied.added_lines);
+            total_removed_lines = total_removed_lines.saturating_add(applied.removed_lines);
+            plans.insert(
+                resolved.clone(),
+                EditManyFilePlan {
+                    requested_path: patch.path.clone(),
+                    resolved: resolved.clone(),
+                    updated: applied.updated,
+                    patches: vec![json!({
+                        "index": index,
+                        "requested_path": patch.path,
+                        "path": resolved.display().to_string(),
+                        "hunks": patch.hunks.len(),
+                        "added_lines": applied.added_lines,
+                        "removed_lines": applied.removed_lines,
+                    })],
+                },
+            );
+        }
+
+        edit_many_write_plans(
+            plans,
+            hunk_count,
+            total_added_lines.saturating_add(total_removed_lines),
+        )
+        .await
+    }
+}
+
+#[async_trait]
+impl AgentTool for EditManyTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "edit_many".to_string(),
+            description: "Apply multiple exact-string edits or a unified diff across one or more existing files in one checked batch before writing any file".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "edits": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": EDIT_MANY_MAX_EDITS,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string" },
+                                "find": { "type": "string" },
+                                "replace": { "type": "string" },
+                                "all": { "type": "boolean", "default": false }
+                            },
+                            "required": ["path", "find", "replace"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "diff": {
+                        "type": "string",
+                        "description": "Unified diff text for existing-file modifications. New files and deletes are not supported here; use write_many for new files."
+                    }
+                },
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let has_edits = arguments.get("edits").is_some();
+        let has_diff = arguments.get("diff").is_some();
+        if has_edits == has_diff {
+            return ToolExecutionResult::error(json!({
+                "error": "provide exactly one of 'edits' or 'diff'",
+            }));
+        }
+        if has_diff {
+            return self.execute_unified_diff(&arguments).await;
+        }
+
+        let edits = match arguments.get("edits").and_then(Value::as_array) {
+            Some(edits) if !edits.is_empty() => edits,
+            Some(_) => {
+                return ToolExecutionResult::error(json!({
+                    "error": "edits must include at least one entry"
+                }))
+            }
+            None => {
+                return ToolExecutionResult::error(json!({
+                    "error": "missing required array field 'edits'"
+                }))
+            }
+        };
+        if edits.len() > EDIT_MANY_MAX_EDITS {
+            return ToolExecutionResult::error(json!({
+                "error": format!(
+                    "edits contains {} entries, limit is {}",
+                    edits.len(),
+                    EDIT_MANY_MAX_EDITS
+                ),
+            }));
+        }
+
+        let mut plans = BTreeMap::<PathBuf, EditManyFilePlan>::new();
+        let mut edit_count = 0usize;
+        let mut total_replacements = 0usize;
+
+        for (index, edit) in edits.iter().enumerate() {
+            let path = match required_string(edit, "path") {
+                Ok(path) => path,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "error": error,
+                    }))
+                }
+            };
+            let find = match required_string(edit, "find") {
+                Ok(find) => find,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "path": path,
+                        "error": error,
+                    }))
+                }
+            };
+            let replace = match required_string(edit, "replace") {
+                Ok(replace) => replace,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "path": path,
+                        "error": error,
+                    }))
+                }
+            };
+            if find.is_empty() {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": path,
+                    "error": "'find' must not be empty",
+                }));
+            }
+            let replace_all = edit.get("all").and_then(Value::as_bool).unwrap_or(false);
+
+            let resolved = match resolve_and_validate_path(&path, &self.policy, PathMode::Edit) {
+                Ok(path) => path,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "index": index,
+                        "path": path,
+                        "error": error,
+                    }))
+                }
+            };
+            if let Err(error) =
+                validate_file_target(&resolved, PathMode::Edit, self.policy.enforce_regular_files)
+            {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": resolved.display().to_string(),
+                    "error": error,
+                }));
+            }
+            if let Some(protected_path_result) =
+                evaluate_protected_path_gate(&self.policy, "edit_many", &resolved)
+            {
+                return protected_path_result;
+            }
+            if let Some(rbac_result) = evaluate_tool_rbac_gate(
+                self.policy.rbac_principal.as_deref(),
+                "edit_many",
+                self.policy.rbac_policy_path.as_deref(),
+                json!({
+                    "path": resolved.display().to_string(),
+                    "find": find,
+                    "replace_bytes": replace.len(),
+                }),
+            ) {
+                return rbac_result;
+            }
+            if let Some(approval_result) = evaluate_tool_approval_gate(ApprovalAction::ToolEdit {
+                path: resolved.display().to_string(),
+                find: find.clone(),
+                replace_bytes: replace.len(),
+            }) {
+                return approval_result;
+            }
+            if let Some(rate_limit_result) = evaluate_tool_rate_limit_gate(
+                &self.policy,
+                "edit_many",
+                json!({
+                    "path": resolved.display().to_string(),
+                    "find": find.clone(),
+                    "replace_bytes": replace.len(),
+                }),
+            ) {
+                return rate_limit_result;
+            }
+
+            if !plans.contains_key(&resolved) {
+                let source = match tokio::fs::read_to_string(&resolved).await {
+                    Ok(source) => source,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "index": index,
+                            "path": resolved.display().to_string(),
+                            "error": error.to_string(),
+                        }))
+                    }
+                };
+                plans.insert(
+                    resolved.clone(),
+                    EditManyFilePlan {
+                        requested_path: path.clone(),
+                        resolved: resolved.clone(),
+                        updated: source,
+                        patches: Vec::new(),
+                    },
+                );
+            }
+
+            let plan = plans.get_mut(&resolved).expect("plan inserted");
+            let occurrences = plan.updated.matches(&find).count();
+            if occurrences == 0 {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": resolved.display().to_string(),
+                    "error": "target string not found",
+                }));
+            }
+            plan.updated = if replace_all {
+                plan.updated.replace(&find, &replace)
+            } else {
+                plan.updated.replacen(&find, &replace, 1)
+            };
+            if plan.updated.len() > self.policy.max_file_write_bytes {
+                return ToolExecutionResult::error(json!({
+                    "index": index,
+                    "path": resolved.display().to_string(),
+                    "error": format!(
+                        "edited content is too large ({} bytes), limit is {} bytes",
+                        plan.updated.len(),
+                        self.policy.max_file_write_bytes
+                    ),
+                }));
+            }
+            let replacements = if replace_all { occurrences } else { 1 };
+            edit_count = edit_count.saturating_add(1);
+            total_replacements = total_replacements.saturating_add(replacements);
+            plan.patches.push(json!({
+                "index": index,
+                "requested_path": path,
+                "path": resolved.display().to_string(),
+                "replacements": replacements,
+            }));
+        }
+
+        let mut edited_files = Vec::with_capacity(plans.len());
+        let mut applied_edits = Vec::with_capacity(edit_count);
+        for (_, plan) in plans {
+            if let Err(error) = tokio::fs::write(&plan.resolved, plan.updated.as_bytes()).await {
+                return ToolExecutionResult::error(json!({
+                    "path": plan.resolved.display().to_string(),
+                    "error": error.to_string(),
+                }));
+            }
+            applied_edits.extend(plan.patches);
+            edited_files.push(json!({
+                "requested_path": plan.requested_path,
+                "path": plan.resolved.display().to_string(),
+                "bytes_written": plan.updated.len(),
+            }));
+        }
+
+        ToolExecutionResult::ok(json!({
+            "file_count": edited_files.len(),
+            "edit_count": edit_count,
+            "replacements": total_replacements,
+            "files_edited": edited_files,
+            "edits_applied": applied_edits,
+        }))
+    }
+}
+
+async fn edit_many_write_plans(
+    plans: BTreeMap<PathBuf, EditManyFilePlan>,
+    edit_count: usize,
+    total_replacements: usize,
+) -> ToolExecutionResult {
+    let mut edited_files = Vec::with_capacity(plans.len());
+    let mut applied_edits = Vec::with_capacity(edit_count);
+    for (_, plan) in plans {
+        if let Err(error) = tokio::fs::write(&plan.resolved, plan.updated.as_bytes()).await {
+            return ToolExecutionResult::error(json!({
+                "path": plan.resolved.display().to_string(),
+                "error": error.to_string(),
+            }));
+        }
+        applied_edits.extend(plan.patches);
+        edited_files.push(json!({
+            "requested_path": plan.requested_path,
+            "path": plan.resolved.display().to_string(),
+            "bytes_written": plan.updated.len(),
+        }));
+    }
+
+    ToolExecutionResult::ok(json!({
+        "file_count": edited_files.len(),
+        "edit_count": edit_count,
+        "replacements": total_replacements,
+        "files_edited": edited_files,
+        "edits_applied": applied_edits,
+    }))
+}
+
+#[derive(Debug)]
+struct EditManyUnifiedFilePatch {
+    path: String,
+    hunks: Vec<EditManyUnifiedHunk>,
+}
+
+#[derive(Debug)]
+struct EditManyUnifiedHunk {
+    old_start: usize,
+    lines: Vec<EditManyUnifiedHunkLine>,
+}
+
+#[derive(Debug)]
+enum EditManyUnifiedHunkLine {
+    Context(String),
+    Remove(String),
+    Add(String),
+}
+
+#[derive(Debug)]
+struct EditManyUnifiedApplyResult {
+    updated: String,
+    added_lines: usize,
+    removed_lines: usize,
+}
+
+fn parse_edit_many_unified_diff(diff: &str) -> Result<Vec<EditManyUnifiedFilePatch>, String> {
+    let lines = diff.lines().collect::<Vec<_>>();
+    let mut patches = Vec::new();
+    let mut index = 0usize;
+    while index < lines.len() {
+        if !is_unified_file_header(&lines, index) {
+            index = index.saturating_add(1);
+            continue;
+        }
+
+        let old_path = parse_unified_header_path(lines[index], "--- ")?;
+        let new_path = parse_unified_header_path(lines[index + 1], "+++ ")?;
+        if old_path == "/dev/null" || new_path == "/dev/null" {
+            return Err("edit_many unified diff only supports existing-file modifications; use write_many for new files".to_string());
+        }
+        let old_normalized = normalize_unified_diff_path(&old_path)?;
+        let path = normalize_unified_diff_path(&new_path)?;
+        if old_normalized != path {
+            return Err(format!(
+                "edit_many unified diff does not support renames: '{}' -> '{}'",
+                old_normalized, path
+            ));
+        }
+        index = index.saturating_add(2);
+
+        let mut hunks = Vec::new();
+        while index < lines.len() {
+            if is_unified_file_header(&lines, index) {
+                break;
+            }
+            let line = lines[index];
+            if !line.starts_with("@@") {
+                index = index.saturating_add(1);
+                continue;
+            }
+
+            let old_start = parse_unified_hunk_old_start(line)?;
+            index = index.saturating_add(1);
+            let mut hunk_lines = Vec::new();
+            while index < lines.len()
+                && !lines[index].starts_with("@@")
+                && !is_unified_file_boundary(&lines, index)
+            {
+                let hunk_line = lines[index];
+                if hunk_line.starts_with("\\ ") {
+                    index = index.saturating_add(1);
+                    continue;
+                }
+                let Some(prefix) = hunk_line.chars().next() else {
+                    return Err("malformed unified diff hunk line without prefix".to_string());
+                };
+                let text = hunk_line
+                    .get(prefix.len_utf8()..)
+                    .unwrap_or_default()
+                    .to_string();
+                match prefix {
+                    ' ' => hunk_lines.push(EditManyUnifiedHunkLine::Context(text)),
+                    '-' => hunk_lines.push(EditManyUnifiedHunkLine::Remove(text)),
+                    '+' => hunk_lines.push(EditManyUnifiedHunkLine::Add(text)),
+                    _ => {
+                        return Err(format!(
+                            "malformed unified diff hunk line prefix '{}'",
+                            prefix
+                        ))
+                    }
+                }
+                index = index.saturating_add(1);
+            }
+            if hunk_lines.is_empty() {
+                return Err("unified diff hunk must include at least one line".to_string());
+            }
+            hunks.push(EditManyUnifiedHunk {
+                old_start,
+                lines: hunk_lines,
+            });
+        }
+
+        if hunks.is_empty() {
+            return Err(format!("unified diff file patch '{}' has no hunks", path));
+        }
+        patches.push(EditManyUnifiedFilePatch { path, hunks });
+    }
+
+    if patches.is_empty() {
+        return Err("unified diff must include at least one file patch".to_string());
+    }
+    Ok(patches)
+}
+
+fn is_unified_file_header(lines: &[&str], index: usize) -> bool {
+    lines
+        .get(index)
+        .is_some_and(|line| line.starts_with("--- "))
+        && lines
+            .get(index.saturating_add(1))
+            .is_some_and(|line| line.starts_with("+++ "))
+}
+
+fn is_unified_file_boundary(lines: &[&str], index: usize) -> bool {
+    lines
+        .get(index)
+        .is_some_and(|line| line.starts_with("diff --git "))
+        || is_unified_file_header(lines, index)
+}
+
+fn parse_unified_header_path(line: &str, prefix: &str) -> Result<String, String> {
+    let path = line
+        .strip_prefix(prefix)
+        .ok_or_else(|| format!("missing unified diff header prefix '{}'", prefix.trim()))?
+        .split('\t')
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if path.is_empty() {
+        return Err("unified diff header path must not be empty".to_string());
+    }
+    Ok(path.to_string())
+}
+
+fn normalize_unified_diff_path(path: &str) -> Result<String, String> {
+    let normalized = path
+        .strip_prefix("a/")
+        .or_else(|| path.strip_prefix("b/"))
+        .unwrap_or(path)
+        .trim();
+    if normalized.is_empty() {
+        return Err("unified diff path must not be empty".to_string());
+    }
+    Ok(normalized.to_string())
+}
+
+fn parse_unified_hunk_old_start(header: &str) -> Result<usize, String> {
+    let body = header
+        .strip_prefix("@@")
+        .and_then(|rest| rest.split_once("@@").map(|(body, _)| body.trim()))
+        .ok_or_else(|| format!("malformed unified diff hunk header '{}'", header))?;
+    let mut ranges = body.split_whitespace();
+    let old_range = ranges
+        .next()
+        .ok_or_else(|| format!("malformed unified diff hunk header '{}'", header))?;
+    let new_range = ranges
+        .next()
+        .ok_or_else(|| format!("malformed unified diff hunk header '{}'", header))?;
+    if !old_range.starts_with('-') || !new_range.starts_with('+') {
+        return Err(format!("malformed unified diff hunk header '{}'", header));
+    }
+    let old_start = parse_unified_range_start(&old_range[1..], "old")?;
+    parse_unified_range_start(&new_range[1..], "new")?;
+    Ok(old_start)
+}
+
+fn parse_unified_range_start(range: &str, label: &str) -> Result<usize, String> {
+    let (start, count) = range
+        .split_once(',')
+        .map_or((range, None), |(start, count)| (start, Some(count)));
+    if start.is_empty() {
+        return Err(format!("malformed unified diff {label} start"));
+    }
+    if let Some(count) = count {
+        count
+            .parse::<usize>()
+            .map_err(|_| format!("malformed unified diff {label} count '{}'", count))?;
+    }
+    start
+        .parse::<usize>()
+        .map_err(|_| format!("malformed unified diff {label} start '{}'", start))
+}
+
+fn apply_edit_many_unified_file_patch(
+    source: &str,
+    patch: &EditManyUnifiedFilePatch,
+) -> Result<EditManyUnifiedApplyResult, String> {
+    let mut lines = source.split('\n').map(str::to_string).collect::<Vec<_>>();
+    let mut offset: isize = 0;
+    let mut added_lines = 0usize;
+    let mut removed_lines = 0usize;
+
+    for (hunk_index, hunk) in patch.hunks.iter().enumerate() {
+        let base_index = if hunk.old_start == 0 {
+            0isize
+        } else {
+            hunk.old_start as isize - 1
+        };
+        let target_index = base_index.saturating_add(offset);
+        if target_index < 0 {
+            return Err(format!(
+                "unified diff hunk {} resolves before start of file",
+                hunk_index
+            ));
+        }
+        let start = target_index as usize;
+        if start > lines.len() {
+            return Err(format!(
+                "unified diff hunk {} starts past end of file",
+                hunk_index
+            ));
+        }
+
+        let mut expected_old = Vec::new();
+        let mut replacement = Vec::new();
+        for line in &hunk.lines {
+            match line {
+                EditManyUnifiedHunkLine::Context(text) => {
+                    expected_old.push(text.clone());
+                    replacement.push(text.clone());
+                }
+                EditManyUnifiedHunkLine::Remove(text) => {
+                    expected_old.push(text.clone());
+                    removed_lines = removed_lines.saturating_add(1);
+                }
+                EditManyUnifiedHunkLine::Add(text) => {
+                    replacement.push(text.clone());
+                    added_lines = added_lines.saturating_add(1);
+                }
+            }
+        }
+
+        let end = start.saturating_add(expected_old.len());
+        if end > lines.len() {
+            return Err(format!(
+                "unified diff hunk {} extends past end of file",
+                hunk_index
+            ));
+        }
+        if lines[start..end] != expected_old {
+            return Err(format!(
+                "unified diff hunk {} did not match current file contents",
+                hunk_index
+            ));
+        }
+
+        let expected_len = expected_old.len();
+        let replacement_len = replacement.len();
+        lines.splice(start..end, replacement);
+        offset = offset.saturating_add(replacement_len as isize - expected_len as isize);
+    }
+
+    Ok(EditManyUnifiedApplyResult {
+        updated: lines.join("\n"),
+        added_lines,
+        removed_lines,
+    })
 }
 
 /// Public struct `BranchTool` used across Tau components.

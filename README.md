@@ -1,170 +1,153 @@
 # Tau
 
-Tau is a Rust-first agent runtime and operator control plane with a connected core path:
-CLI runtime -> sessions/tools/safety -> gateway APIs -> transport and operator workflows.
+Tau is a Rust-native runtime for operating AI agents as real software systems:
+model calls, tool use, session state, gateway APIs, background jobs, operator
+controls, and verification evidence live in one workspace.
 
-Short answer to the integration question: the core runtime path is integrated and runnable today, while some subsystems are still staged or partial.
+The product direction is straightforward: give Tau a task, the authority it is
+allowed to use, and the verifier that decides whether the work is done. Tau then
+runs the loop and returns either a verified result or a clear blocked reason with
+the evidence needed to continue.
 
-## What Tau Is
+Today Tau is strongest as an operator-controlled agent runtime and autonomous
+coding harness. It can run local and provider-backed coding loops, patch multiple
+files, rerun verifiers, commit PR-ready work, expose runtime status, and preserve
+run artifacts. It is not yet a hands-off arbitrary issue-to-merge system.
 
-Tau combines:
-- a primary CLI runtime (`tau-coding-agent`) for interactive and one-shot execution,
-- persistent session and tool-policy/safety controls,
-- gateway and operator surfaces for API and operations workflows,
-- deterministic demos and validation scripts for local and CI loops.
+## Why Tau Exists
 
-The workspace is intentionally multi-crate and contract-driven. Full crate membership is in [`Cargo.toml`](Cargo.toml).
+Useful agents need more than a chat prompt. They need:
 
-## Who Tau Is For
+- controlled tools for reading, writing, editing, shelling out, and calling HTTP,
+- durable state for sessions, jobs, memory, checkpoints, and resumes,
+- provider/auth routing that can be tested without pretending every live account
+  is always available,
+- verifiers that turn "looks good" into RED/GREEN evidence,
+- operator surfaces that show what is running, what changed, what failed, and
+  what authority is missing.
 
-- Operators who need repeatable runtime controls, diagnostics, and rollback-friendly workflows.
-- Integrators who need OpenAI-compatible gateway routes and transport bridges.
-- Contributors working in a spec-driven, TDD-oriented Rust workspace.
+Tau is the runtime layer for that work. The repo is intentionally multi-crate and
+contract-driven; full workspace membership is in [`Cargo.toml`](Cargo.toml).
 
-## Integrated End-to-End Paths
+## What Works Today
 
-These are the paths that operate as connected flows today.
+- CLI and TUI agent sessions through `tau-coding-agent` and `tau-tui`.
+- Persistent sessions, model/provider routing, memory surfaces, and tool-policy
+  controls.
+- Gateway APIs and operator routes for sessions, memory, jobs, routines,
+  deploy/process state, and dashboard diagnostics.
+- Built-in tools for policy-checked filesystem, shell, HTTP, read/write/edit,
+  multi-file `write_many`, and surgical `edit_many` patches from exact strings
+  or unified diffs.
+- Autonomous coding mission loops that can branch a repo, run a RED verifier,
+  apply controlled multi-file changes, rerun GREEN verification, commit, and
+  produce PR-ready evidence.
+- Provider-backed coding flows where a configured model supplies edits,
+  verifier failures are fed back with stdout/stderr and git diff, and Tau reruns
+  the repair loop within a bounded budget.
+- Background autonomous coding job records with submit/run/replay/recover/status
+  commands, plus guarded GitHub auto-merge requests when explicit policy, GitHub
+  auth, PR URL, and branch protections allow it.
+- Deterministic validation scripts for runtime claims, gateway/auth paths,
+  operator maturity, dashboard contracts, TUI behavior, training workflows, and
+  RL harness evidence.
 
-| Path | Start Point | Integrated Components | Primary Evidence |
-|---|---|---|---|
-| Local operator loop | `cargo run -p tau-coding-agent -- --onboard --onboard-non-interactive` then prompt mode | CLI runtime, agent core loop, sessions, tools, safety policies | [`docs/guides/quickstart.md`](docs/guides/quickstart.md), [`docs/guides/operator-control-summary.md`](docs/guides/operator-control-summary.md) |
-| Gateway auth/session loop | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session handling, API route contracts, runtime policies | [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`docs/guides/gateway-api-reference.md`](docs/guides/gateway-api-reference.md) |
-| Unified runtime lifecycle loop | `./scripts/dev/prove-tau-product.sh --check --report /tmp/tau-product-proof-check.json` for static proof evidence, then `./scripts/dev/prove-tau-product.sh --run --webchat-smoke --report /tmp/tau-product-proof-webchat.json` for opt-in live product-surface evidence | One-command runtime bring-up (`up/status/down`) for gateway/dashboard + interactive TUI agent (`tui`) with explicit live-shell fallback, optional webchat readiness smoke, and optional JSON evidence | [`scripts/dev/prove-tau-product.sh`](scripts/dev/prove-tau-product.sh), [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`docs/guides/canonical-product-proof.md`](docs/guides/canonical-product-proof.md) |
-| Live coding mission loop | `./scripts/dev/test-full-autonomous-coding-loop.sh` | Disposable-repo M334 `repo_spec_to_pr_feature_delivery` harness through `CodingMissionRunner`: RED verifier, controlled edit, GREEN verifier, commit, PR-ready bundle, crash/resume, and blocked-task fail-closed evidence | [`scripts/dev/test-full-autonomous-coding-loop.sh`](scripts/dev/test-full-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3654/tasks.md`](specs/3654/tasks.md) |
-| Provider-backed coding loop | `TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh` | Opt-in disposable-repo proof that calls a configured provider using API-key or subscription auth, parses JSON edit instructions into `CodingMissionRunner`, records RED/GREEN verifier, commit, and PR-ready evidence, and fail-closes malformed provider output | [`scripts/dev/test-provider-backed-autonomous-coding-loop.sh`](scripts/dev/test-provider-backed-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3788-provider-backed-coding-loop-proof/tasks.md`](specs/3788-provider-backed-coding-loop-proof/tasks.md) |
-| Provider verifier repair loop | `TAU_LIVE_PROVIDER_REPAIR_PROOF=1 ./scripts/dev/test-provider-verifier-repair-loop.sh` | Real-repo harness path that reruns provider attempts after verifier failure: captures failed verifier stdout/stderr and git diff, asks the next provider attempt for a targeted JSON patch, reruns verifiers, commits PR-ready output, and fail-closes exhausted repair budgets | [`scripts/dev/test-provider-verifier-repair-loop.sh`](scripts/dev/test-provider-verifier-repair-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3798-provider-verifier-repair-loop/spec.md`](specs/3798-provider-verifier-repair-loop/spec.md) |
-| Real-repo coding harness | `./scripts/dev/test-real-repo-autonomous-coding-harness.sh` | Temporary worktree of this repository through `CodingMissionRunner`: provider-compatible multi-file edit array, real git branch/commit, RED/GREEN verifier evidence, and manual PR-ready bundle | [`scripts/dev/test-real-repo-autonomous-coding-harness.sh`](scripts/dev/test-real-repo-autonomous-coding-harness.sh), [`crates/tau-agent-core/src/coding_mission.rs`](crates/tau-agent-core/src/coding_mission.rs), [`specs/3792-real-repo-autonomous-coding-harness/spec.md`](specs/3792-real-repo-autonomous-coding-harness/spec.md) |
-| Multi-channel ingress loop | `./scripts/demo/multi-channel.sh` | Multi-channel runtime, transport normalization, routing pipeline | [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md), [`docs/guides/transports.md`](docs/guides/transports.md) |
-| Prompt optimization loop | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) runbook flow | Training runner/store/tracer/proxy + rollout controls | [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`docs/guides/training-proxy-ops.md`](docs/guides/training-proxy-ops.md) |
-| Connected operator GA loop | `./scripts/verify/m296-ga-readiness-gate.sh` | RL maturity wave + auth/readiness checks + rollback trigger validation + closeout signoff criteria | [`docs/guides/m296-ga-readiness-gate.md`](docs/guides/m296-ga-readiness-gate.md), `artifacts/operator-ga-readiness/verification-report.json` |
+## Autonomous Coding Status
 
-## What You Can Do Today
+Tau now has a real coding harness, not just isolated file generation.
 
-- Run interactive and one-shot agent flows from `tau-coding-agent`.
-- Use session persistence and lifecycle operations (branch, resume, export/import/repair).
-- Route model calls across multiple provider/auth modes.
-- Run gateway API surfaces and operator routes.
-- Use built-in tools with policy controls (filesystem/shell/http/path/rate/sandbox).
-- Run channel and bridge runtimes (GitHub Issues, Slack, Discord, Telegram/WhatsApp paths).
-- Operate prompt-optimization workflows with SQLite-backed rollout state and optional proxy attribution.
-- Execute deterministic demo suites and validation scripts in local/CI loops.
-- Run a local autonomous-coding lifecycle harness that proves Tau's coding
-  mission state can branch, retry from RED verifier evidence, apply a controlled
-  fix, verify GREEN, commit, package PR-ready output, resume after interruption,
-  and stop honestly on a blocked verifier.
-- Run a deterministic real-repo coding harness against a temporary worktree of
-  this repository with provider-compatible multi-file edits, RED/GREEN verifier
-  transcript, commit hash, and PR-ready bundle evidence.
-- Run a bounded provider verifier repair loop that converts verifier failure
-  evidence plus git diff into a follow-up provider patch attempt, then either
-  reruns to PR-ready or records an exhausted-repair blocked state.
+What is landed:
 
-## Capability Boundaries
+- `CodingMissionRunner` can handle multi-file edits and resume from checkpoints.
+- The real-repo harness runs against a temporary worktree of this repository and
+  records RED/GREEN verifier output, commit hash, PR-ready body, and publication
+  status.
+- Provider-backed runs can use configured provider auth, including OpenRouter,
+  and stores sanitized provider/model evidence.
+- The verifier repair loop can take a failed verifier plus git diff, ask the
+  provider for a targeted follow-up patch, rerun verification, and stop cleanly
+  if the repair budget is exhausted.
+- Prompt-mode agents can create multiple files with `write_many` and patch
+  existing files with `edit_many`, including multi-file unified-diff hunks.
+- Autonomous coding jobs can request normal GitHub auto-merge with `gh pr merge
+  --auto` only after explicit policy/auth/PR-ready gates pass. Tau does not use
+  admin override flags.
+- Arbitrary issue intake without verifier/edit authority produces a durable
+  blocked authority plan instead of mutating the repository.
 
-Some surfaces are intentionally diagnostics-first or staged:
+What is still product work:
 
-- True RL:
-  - deterministic end-to-end harness is available (`tau-trainer`),
-  - policy-operations depth (promotion/rollback/significance/runtime-audit) is aggregated in `scripts/verify/m310-rl-policy-ops-depth.sh`,
-  - operations drill depth (operational safety, resume-after-crash, benchmark/safety, rollback checklist) is aggregated in `scripts/verify/m316-rl-operations-drill-depth.sh`,
-  - broader production policy-optimization operating loops remain an expansion track.
-- Dashboard:
-  - route and diagnostics surfaces exist,
-  - operator workflow depth across ops chat/session/lineage/memory-graph/tools routes is aggregated in `scripts/verify/m314-dashboard-operator-workflow-depth.sh`,
-  - command-center depth (timeline/alert/control markers + control-action fail paths + live stream matrix) is aggregated in `scripts/verify/m318-dashboard-command-center-depth.sh`,
-  - not all desired product UX workflows are fully integrated live-mutation paths.
-- Auth verification:
-  - provider auth-mode matrix and gateway auth/session lifecycle conformance are covered in deterministic suites (`scripts/verify/m295-operator-maturity-wave.sh`),
-  - auth-depth lifecycle and edge-path coverage is aggregated in `scripts/verify/m303-auth-workflow-depth.sh`,
-  - credential lifecycle depth (integration-auth set/status/rotate/revoke + resolve-secret fail-closed) is aggregated in `scripts/verify/m309-auth-credential-lifecycle-depth.sh`,
-  - live-env validation depth (skip/enable/key contracts + aggregated auth-depth gates) is aggregated in `scripts/verify/m312-auth-live-env-depth.sh`,
-  - live third-party credential/network validation remains environment-specific.
-- Multi-channel orchestration:
-  - deterministic C5 scenario-depth coverage is aggregated in `scripts/verify/m307-multi-channel-orchestration-depth.sh`,
-  - live connector/provider uptime and credential validation remain environment-specific.
-- E2E core verification:
-  - deterministic integration+gateway core scenario depth is aggregated in `scripts/verify/m313-e2e-core-scenario-depth.sh`,
-  - deterministic operator-route scenario depth is aggregated in `scripts/verify/m315-e2e-operator-route-depth.sh`,
-  - full PRD-wide scenario-group completion continues as an expansion track.
-- TUI:
-  - includes operator-shell, interactive `agent`, and state-backed `shell-live` modes,
-  - `shell-live` now reports deterministic malformed/missing artifact diagnostics for operator triage,
-  - operator workflow depth (shell, shell-live watch, and artifact diagnostics) is aggregated in `scripts/verify/m311-tui-operator-workflow-depth.sh`,
-  - scenario-expansion depth (demo mode behavior + parser/shell-live edge paths + workflow-depth chaining) is aggregated in `scripts/verify/m317-tui-scenario-expansion-depth.sh`,
-  - remains complementary to (not a replacement for) web dashboard workflows.
-- Autonomous coding:
-  - `scripts/dev/test-full-autonomous-coding-loop.sh` is live local lifecycle
-    proof for `CodingMissionRunner`, not a provider-backed model benchmark,
-  - the harness uses controlled disposable-repo edits so lifecycle evidence is
-    reproducible: branch, RED/GREEN verifier transcript, commit hash, resume
-    evidence, blocked reason, and PR-ready bundle,
-  - `TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh`
-    adds the provider-backed proof: a configured provider returns JSON edit
-    instructions, Tau parses them into `CodingMissionRunner`, and the report
-    records sanitized provider/model metadata plus RED/GREEN verifier, commit,
-    and PR-ready evidence. For OpenRouter-hosted models, include the
-    OpenRouter provider prefix, for example
-    `TAU_PROVIDER_PROOF_MODEL=openrouter/deepseek/deepseek-v4-flash`. Set
-    `TAU_PROVIDER_PROOF_AUTH_MODE=codex-cli` with a
-    Codex CLI-supported model such as `openai/gpt-5.5` to validate the
-    local subscription-backed provider path.
-  - `TAU_LIVE_PROVIDER_REPAIR_PROOF=1 ./scripts/dev/test-provider-verifier-repair-loop.sh`
-    adds the repair-loop proof: the first provider-shaped edit can fail a
-    verifier, Tau captures failed verifier evidence plus git diff, sends that
-    context to the next configured provider attempt, reruns verification, and
-    commits only when the repaired worktree reaches PR-ready. Without
-    `TAU_LIVE_PROVIDER_REPAIR_PROOF=1`, the same script still runs deterministic
-    mock repair and exhausted-budget fail-closed checks.
-  - `./scripts/dev/test-real-repo-autonomous-coding-harness.sh` runs the same
-    lifecycle against a temporary worktree of this repository and validates a
-    provider-compatible multi-file edit array. This is real git/worktree/commit
-    evidence, but not unattended arbitrary issue selection, durable background
-    recovery UI, or auto-merge.
+- arbitrary issue selection and broad issue-to-PR autonomy with minimal human
+  steering,
+- a polished command-center UX for durable stuck-job recovery, replay, and
+  crash-resume across every coding path,
+- automatic PR opening/merging as the default path rather than an explicit,
+  policy-gated operator action,
+- large-scale production policy optimization for RL.
 
-Executable claim boundary:
+## Operator Experience
+
+The clearest operator path is `tau-unified`:
 
 ```bash
-./scripts/dev/runtime-reality-gate.sh \
-  --output-json /tmp/tau-runtime-reality.json \
-  --output-md /tmp/tau-runtime-reality.md
+./scripts/run/tau-unified.sh up --auth-mode localhost-dev
+./scripts/run/tau-unified.sh status
+./scripts/run/tau-unified.sh tui --no-color
+./scripts/run/tau-unified.sh down
 ```
 
-The runtime reality gate is the fast default check for Tau product claims. It
-runs deterministic proof surfaces, records heavyweight/live validation as
-explicit opt-in evidence, and keeps unsupported claims such as autonomous-forever
-operation or shell-only browser-pixel proof from being represented as complete.
-`tau-unified status` contributes the control-plane visibility part of that
-evidence: it emits stable `control_plane.*` markers for health, logs, runtime
-artifacts, sessions, memory, jobs/routines, and deploy/process state. Those
-markers are status visibility proof, not a claim that durable stuck-job
-recovery, replay, crash-resume, production RL policy operations, live provider
-validation, or headed-browser pixel proof are complete.
+`status` emits stable `control_plane.*` markers for health, logs, runtime
+artifacts, sessions, memory, jobs/routines, deploy/process state, and active
+coding missions. These are visibility markers. They do not, by themselves, mean
+every durable recovery and replay workflow is product-polished.
 
-## Maturity Matrix
+## Evidence Map
 
-| Capability Area | Status | Meaning | Primary Reference |
-|---|---|---|---|
-| Core CLI runtime + sessions + tools | Integrated | Production-like operating loop available | [`docs/guides/quickstart.md`](docs/guides/quickstart.md) |
-| Gateway auth/session APIs | Integrated | Deterministic auth/session smoke flows and documented API contracts | [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md) |
-| Auth workflow conformance | Integrated | Provider matrix + gateway session lifecycle validated by dedicated suites | [`crates/tau-provider/tests/auth_workflow_conformance.rs`](crates/tau-provider/tests/auth_workflow_conformance.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
-| Multi-channel and bridge transports | Operational | Runnable with connector-specific maturity differences | [`docs/guides/transports.md`](docs/guides/transports.md) |
-| Dashboard operator UX | Partial | Ops routes and diagnostics available; broader UX still expanding | [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md) |
-| Unified runtime control-plane status | Partial | `tau-unified status` exposes health/logs/sessions/memory/jobs/routines/deploy visibility; polished command-center UX and durable proactive recovery remain expanding | [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`scripts/dev/runtime-reality-gate.sh`](scripts/dev/runtime-reality-gate.sh) |
-| Prompt optimization training | Integrated | Canonical training path today | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
-| True RL | Integrated | Deterministic end-to-end harness emits rollout + GAE/PPO artifact evidence | [`crates/tau-trainer/src/rl_e2e.rs`](crates/tau-trainer/src/rl_e2e.rs), [`crates/tau-trainer/src/bin/rl_e2e_harness.rs`](crates/tau-trainer/src/bin/rl_e2e_harness.rs) |
-| Autonomous coding lifecycle | Partial | Live local `CodingMissionRunner` harness proves lifecycle mechanics; provider-backed proof verifies configured-provider edit supply; real-repo harness now validates provider-compatible multi-file worktree commits and PR-ready output, while arbitrary issue selection, durable background recovery UX, and auto-merge remain expanding | [`scripts/dev/test-full-autonomous-coding-loop.sh`](scripts/dev/test-full-autonomous-coding-loop.sh), [`scripts/dev/test-provider-backed-autonomous-coding-loop.sh`](scripts/dev/test-provider-backed-autonomous-coding-loop.sh), [`scripts/dev/test-real-repo-autonomous-coding-harness.sh`](scripts/dev/test-real-repo-autonomous-coding-harness.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs) |
-| TUI | Integrated | Operator-shell + interactive `agent` mode + state-backed `shell-live` diagnostics | [`crates/tau-tui/src/main.rs`](crates/tau-tui/src/main.rs), [`crates/tau-tui/src/lib.rs`](crates/tau-tui/src/lib.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
+Tau keeps product claims tied to executable checks. Start here when validating
+the repo:
 
-## Current Gaps and Execution Plan
+| Capability | Command | What It Proves |
+| --- | --- | --- |
+| Fast local validation | `./scripts/dev/fast-validate.sh` | Formatting/build-focused developer loop |
+| Runtime claim boundary | `./scripts/dev/runtime-reality-gate.sh --output-json /tmp/tau-runtime-reality.json --output-md /tmp/tau-runtime-reality.md` | Deterministic product-claim check with explicit unsupported-claim boundaries |
+| Unified operator runtime | `./scripts/dev/prove-tau-product.sh --check --report /tmp/tau-product-proof-check.json` | Static proof for the unified product path |
+| Full local coding lifecycle | `./scripts/dev/test-full-autonomous-coding-loop.sh` | Branch, RED verifier, fix, GREEN verifier, commit, PR-ready bundle, blocked-state evidence |
+| Real-repo coding harness | `./scripts/dev/test-real-repo-autonomous-coding-harness.sh` | Temporary worktree, multi-file edits, real git commit, PR-ready evidence |
+| Provider-backed coding | `TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh` | Configured-provider edit supply with RED/GREEN verifier and commit evidence |
+| Provider repair loop | `TAU_LIVE_PROVIDER_REPAIR_PROOF=1 ./scripts/dev/test-provider-verifier-repair-loop.sh` | Verifier failure -> targeted provider repair -> rerun -> PR-ready or blocked |
+| Guarded auto-merge/intake | `scripts/dev/test-autonomous-coding-automerge-intake.sh` | Protected-branch-safe auto-merge request gates and no-authority issue intake |
+| Gateway auth/session | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session lifecycle smoke path |
+| Operator maturity | `./scripts/verify/m295-operator-maturity-wave.sh` | TUI, RL, and auth maturity checks |
 
-| Gap | Current State | Execution Plan Links |
-|---|---|---|
-| True RL productionization depth | deterministic end-to-end harness, promotion/rollback gate verification, GA readiness gate, policy-operations depth verification, and operations drill-depth verification are delivered; larger-scale policy operations still expanding | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md), [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`scripts/verify/m301-rl-promotion-rollback-gate.sh`](scripts/verify/m301-rl-promotion-rollback-gate.sh), [`scripts/verify/m310-rl-policy-ops-depth.sh`](scripts/verify/m310-rl-policy-ops-depth.sh), [`scripts/verify/m316-rl-operations-drill-depth.sh`](scripts/verify/m316-rl-operations-drill-depth.sh), [`scripts/verify/m296-ga-readiness-gate.sh`](scripts/verify/m296-ga-readiness-gate.sh) |
-| Dashboard maturity expansion | deterministic live mutation depth, operator workflow-depth verification, and command-center depth verification now aggregate status/action/stream plus ops chat/session/lineage/memory-graph/tools/timeline/alert/control contracts; richer workflow UX still expanding | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md), [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md), [`scripts/verify/m308-dashboard-live-mutation-depth.sh`](scripts/verify/m308-dashboard-live-mutation-depth.sh), [`scripts/verify/m314-dashboard-operator-workflow-depth.sh`](scripts/verify/m314-dashboard-operator-workflow-depth.sh), [`scripts/verify/m318-dashboard-command-center-depth.sh`](scripts/verify/m318-dashboard-command-center-depth.sh) |
-| Multi-channel orchestration depth | deterministic C5 Telegram/Discord routing, WhatsApp webhook verification, lifecycle, and media-handling coverage is aggregated in a dedicated gate; live provider-specific behavior still environment-bound | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/transports.md`](docs/guides/transports.md), [`scripts/verify/m307-multi-channel-orchestration-depth.sh`](scripts/verify/m307-multi-channel-orchestration-depth.sh) |
-| Extended auth live-env verification | deterministic matrix/lifecycle coverage, auth-depth edge-path gating, credential lifecycle depth verification, and live-env validation depth gating are delivered; external credential/live-env permutations remain environment-specific | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`scripts/verify/m303-auth-workflow-depth.sh`](scripts/verify/m303-auth-workflow-depth.sh), [`scripts/verify/m309-auth-credential-lifecycle-depth.sh`](scripts/verify/m309-auth-credential-lifecycle-depth.sh), [`scripts/verify/m312-auth-live-env-depth.sh`](scripts/verify/m312-auth-live-env-depth.sh), [`scripts/verify/m296-live-auth-validation.sh`](scripts/verify/m296-live-auth-validation.sh) |
-| E2E scenario-group expansion | deterministic core scenario-depth and operator-route scenario-depth verification across integration memory/tool paths and gateway lifecycle/session/operator-route contracts are delivered; full scenario-group completion remains in progress | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`specs/milestones/m298/index.md`](specs/milestones/m298/index.md), [`scripts/verify/m313-e2e-core-scenario-depth.sh`](scripts/verify/m313-e2e-core-scenario-depth.sh), [`scripts/verify/m315-e2e-operator-route-depth.sh`](scripts/verify/m315-e2e-operator-route-depth.sh) |
-| TUI interaction depth | operator shell, interactive `agent` handoff, resilient `shell-live` diagnostics, deterministic workflow-depth verification, and deterministic scenario-expansion verification are delivered; richer UX flows continue to evolve | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md), [`scripts/verify/m311-tui-operator-workflow-depth.sh`](scripts/verify/m311-tui-operator-workflow-depth.sh), [`scripts/verify/m317-tui-scenario-expansion-depth.sh`](scripts/verify/m317-tui-scenario-expansion-depth.sh) |
+Provider-backed checks are intentionally opt-in because they depend on local
+credentials, network access, and the configured model.
+
+## Maturity Snapshot
+
+| Area | Status | Plain Meaning |
+| --- | --- | --- |
+| CLI runtime, sessions, tools | Integrated | Usable local agent runtime with persistent state and policy-checked tools |
+| Gateway APIs | Integrated | Auth/session routes and documented API contracts have deterministic coverage |
+| TUI | Integrated | Operator shell, interactive agent mode, and live state-watch diagnostics exist |
+| Multi-channel transports | Operational | Bridges exist with connector-specific maturity and live credential requirements |
+| Prompt optimization/training | Integrated | Canonical training and rollout-state paths exist |
+| True RL | Integrated harness, not production policy ops | Deterministic rollout/GAE/PPO evidence exists; large-scale promotion operations are still expanding |
+| Dashboard/operator UX | Partial | Routes and diagnostics exist; polished command-center workflows are still being built |
+| Unified control plane | Partial | `tau-unified status` exposes broad runtime visibility; proactive recovery/replay UX is not complete |
+| Autonomous coding | Partial but real | Controlled and provider-backed coding loops work; arbitrary low-touch issue-to-merge is still expanding |
+
+## Current Build Priorities
+
+- Make the autonomous coding loop more durable: stuck-job recovery, replay,
+  crash-resume, and operator status that are easy to trust.
+- Turn provider-backed verifier repair from proof path into the normal coding
+  product loop.
+- Keep collapsing scattered entrypoints into the `tau-unified` operator
+  experience.
+- Continue dashboard extraction and UX cleanup so operator routes feel like a
+  command center instead of diagnostics stitched together.
+- Grow RL and learning work through long-horizon evals, safety-constrained
+  promotion, rollback drills, and statistically useful evidence.
 
 ## 5-Minute Quickstart
 

@@ -221,6 +221,11 @@ enum ProviderEditPayload {
     Multi {
         edits: Vec<ProviderEditPayloadEntry>,
     },
+    FileMap {
+        files: BTreeMap<String, String>,
+        #[serde(default)]
+        reason_code: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -688,8 +693,9 @@ fn resolve_provider_edit(
         model: model_ref.model.clone(),
         messages: vec![
             Message::system(
-                "You generate one safe edit for a disposable Tau coding-loop proof. \
-                 Return valid JSON only. No markdown, no prose.",
+                "You generate one complete, safe edit set for a Tau coding-loop proof. \
+                 Return valid JSON only. No markdown, no prose. Include every file needed \
+                 for the requested verifier pass in a single response.",
             ),
             Message::user(provider_prompt(state, attempt)?),
         ],
@@ -861,27 +867,17 @@ fn provider_prompt(
     state: &CodingMissionState,
     attempt: &ProviderAttemptContext,
 ) -> anyhow::Result<String> {
-    let status_path = state.repo_path.join("status.txt");
-    let current_status = match fs::read_to_string(&status_path) {
-        Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            format!("{} is absent in this repository.\n", status_path.display())
-        }
-        Err(error) => {
-            return Err(error)
-                .with_context(|| format!("read fixture status {}", status_path.display()));
-        }
-    };
+    let repo_context = provider_repo_context(state)?;
     let repair_section = attempt
         .repair
         .as_ref()
         .map(render_provider_repair_context)
         .unwrap_or_default();
     Ok(format!(
-        "Goal:\n{}\n\nRepository root:\n{}\n\nCurrent file status.txt context:\n{}\n\nVerifier commands:\n{}\n{}\n\nReturn valid JSON only. Use either the legacy single-edit shape or this multi-edit shape:\n{{\"edits\":[{{\"relative_path\":\"path/from/repo/root\",\"contents\":\"file contents\",\"reason_code\":\"provider_fix\"}}]}}",
+        "Goal:\n{}\n\nRepository root:\n{}\n\nRepository context:\n{}\n\nVerifier commands:\n{}\n{}\n\nReturn valid JSON only. Return a complete edit set for all files needed in this single response; do not rely on later turns. Use either the legacy single-edit shape, this multi-edit shape:\n{{\"edits\":[{{\"relative_path\":\"path/from/repo/root\",\"contents\":\"file contents\",\"reason_code\":\"provider_fix\"}}]}}\nor this compact file-map shape:\n{{\"files\":{{\"path/from/repo/root\":\"file contents\"}},\"reason_code\":\"provider_fix\"}}",
         state.goal,
         state.repo_path.display(),
-        current_status,
+        repo_context,
         state
             .verifier_commands
             .iter()
@@ -890,6 +886,72 @@ fn provider_prompt(
             .join("\n"),
         repair_section
     ))
+}
+
+fn provider_repo_context(state: &CodingMissionState) -> anyhow::Result<String> {
+    let status = git_lines(state.repo_path.as_path(), &["status", "--porcelain"])?;
+    let files = git_lines(
+        state.repo_path.as_path(),
+        &["ls-files", "--cached", "--others", "--exclude-standard"],
+    )?;
+    let file_list = if files.trim().is_empty() {
+        "none".to_string()
+    } else {
+        truncate_chars(files.trim(), 4_000)
+    };
+    let snippets = provider_repo_file_snippets(state.repo_path.as_path(), &files);
+    Ok(format!(
+        "Git status:\n{}\n\nTracked and untracked files:\n{}\n\nFile snippets:\n{}",
+        if status.trim().is_empty() {
+            "clean".to_string()
+        } else {
+            truncate_chars(status.trim(), 2_000)
+        },
+        file_list,
+        snippets
+    ))
+}
+
+fn provider_repo_file_snippets(repo_path: &Path, files: &str) -> String {
+    let mut snippets = Vec::new();
+    for relative in files
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !line.starts_with(".git/") && !line.starts_with(".tau/"))
+        .take(12)
+    {
+        let path = Path::new(relative);
+        if path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::Prefix(_)
+                        | std::path::Component::RootDir
+                )
+            })
+        {
+            continue;
+        }
+        let absolute = repo_path.join(path);
+        if !absolute.is_file() {
+            continue;
+        }
+        let Ok(contents) = fs::read_to_string(&absolute) else {
+            continue;
+        };
+        snippets.push(format!(
+            "--- {} ---\n{}",
+            relative,
+            truncate_chars(redact_secret_like_tokens(&contents).as_str(), 1_600)
+        ));
+    }
+    if snippets.is_empty() {
+        "none".to_string()
+    } else {
+        snippets.join("\n\n")
+    }
 }
 
 fn provider_repair_context(state: &CodingMissionState) -> anyhow::Result<ProviderRepairContext> {
@@ -1014,8 +1076,8 @@ fn provider_edit_from_response(input: ProviderEditResponseInput<'_>) -> Provider
     let response_text_bytes = response_text.len();
     let response_text_sha256 = sha256_hex(response_text.as_bytes());
     let usage_report = usage.as_ref().map(provider_usage_report);
-    match serde_json::from_str::<ProviderEditPayload>(response_text.trim()) {
-        Ok(payload) => match provider_payload_to_edits(payload) {
+    match parse_provider_edit_payload(response_text) {
+        Ok((payload, parse_status)) => match provider_payload_to_edits(payload) {
             Ok(edits) => {
                 let edit_relative_path = provider_edit_paths_summary(&edits);
                 let edit_reason_code = provider_edit_reason_summary(&edits);
@@ -1025,7 +1087,7 @@ fn provider_edit_from_response(input: ProviderEditResponseInput<'_>) -> Provider
                     provider: model_ref.provider.as_str().to_string(),
                     model: model_ref.model.clone(),
                     dispatched,
-                    parse_status: "parsed",
+                    parse_status,
                     reason_code: "provider_edit_parsed".to_string(),
                     finish_reason,
                     usage: usage_report,
@@ -1064,7 +1126,7 @@ fn provider_edit_from_response(input: ProviderEditResponseInput<'_>) -> Provider
                 model_ref,
                 dispatched,
                 reason_code: "provider_output_malformed",
-                error: Some(format!("provider response was not valid JSON: {error}")),
+                error: Some(error),
                 response_text_bytes: Some(response_text_bytes),
                 response_text_sha256: Some(response_text_sha256),
                 usage: usage_report,
@@ -1074,12 +1136,117 @@ fn provider_edit_from_response(input: ProviderEditResponseInput<'_>) -> Provider
     }
 }
 
+fn parse_provider_edit_payload(
+    response_text: &str,
+) -> Result<(ProviderEditPayload, &'static str), String> {
+    let trimmed = response_text.trim();
+    match serde_json::from_str::<ProviderEditPayload>(trimmed) {
+        Ok(payload) => return Ok((payload, "parsed")),
+        Err(error) => {
+            let direct_error = error;
+            for candidate in provider_json_candidates(trimmed) {
+                if candidate.trim() == trimmed {
+                    continue;
+                }
+                if let Ok(payload) = serde_json::from_str::<ProviderEditPayload>(candidate.trim()) {
+                    return Ok((payload, "extracted_json"));
+                }
+            }
+            Err(format!(
+                "provider response was not valid JSON: {direct_error}"
+            ))
+        }
+    }
+}
+
+fn provider_json_candidates(response_text: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    candidates.extend(provider_fenced_json_candidates(response_text));
+    if let Some(candidate) = first_balanced_json_object(response_text) {
+        candidates.push(candidate);
+    }
+    candidates
+}
+
+fn provider_fenced_json_candidates(response_text: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let mut offset = 0;
+    while let Some(start_rel) = response_text[offset..].find("```") {
+        let content_start = offset + start_rel + 3;
+        let Some(end_rel) = response_text[content_start..].find("```") else {
+            break;
+        };
+        let content_end = content_start + end_rel;
+        let raw = &response_text[content_start..content_end];
+        let candidate = raw
+            .strip_prefix("json")
+            .or_else(|| raw.strip_prefix("JSON"))
+            .unwrap_or(raw)
+            .trim_start_matches(['\r', '\n', ' ']);
+        if !candidate.trim().is_empty() {
+            candidates.push(candidate.trim().to_string());
+        }
+        offset = content_end + 3;
+    }
+    candidates
+}
+
+fn first_balanced_json_object(response_text: &str) -> Option<String> {
+    let mut start = None;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, ch) in response_text.char_indices() {
+        if start.is_none() {
+            if ch == '{' {
+                start = Some(index);
+                depth = 1;
+            }
+            continue;
+        }
+
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '{' => depth = depth.saturating_add(1),
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let start = start.expect("start set");
+                    let end = index + ch.len_utf8();
+                    return Some(response_text[start..end].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn provider_payload_to_edits(
     payload: ProviderEditPayload,
 ) -> Result<Vec<CodingMissionControlledEdit>, String> {
     let entries = match payload {
         ProviderEditPayload::Single(entry) => vec![entry],
         ProviderEditPayload::Multi { edits } => edits,
+        ProviderEditPayload::FileMap { files, reason_code } => files
+            .into_iter()
+            .map(|(relative_path, contents)| ProviderEditPayloadEntry {
+                relative_path,
+                contents,
+                reason_code: reason_code.clone(),
+            })
+            .collect(),
     };
     if entries.is_empty() {
         return Err("provider edit set must not be empty".to_string());
@@ -1221,7 +1388,7 @@ fn provider_report_satisfies_mode(mode: HarnessMode, report: Option<&ProviderPro
         HarnessMode::ProviderSuccess => report
             .map(|report| {
                 report.dispatched
-                    && report.parse_status == "parsed"
+                    && provider_parse_succeeded(report.parse_status)
                     && matches!(
                         report.edit_relative_path.as_deref(),
                         Some(paths) if paths.split(',').any(|path| path == "status.txt")
@@ -1229,10 +1396,14 @@ fn provider_report_satisfies_mode(mode: HarnessMode, report: Option<&ProviderPro
             })
             .unwrap_or(false),
         HarnessMode::RealRepo => report
-            .map(|report| report.dispatched && report.parse_status == "parsed")
+            .map(|report| report.dispatched && provider_parse_succeeded(report.parse_status))
             .unwrap_or(false),
         HarnessMode::Success | HarnessMode::Resume | HarnessMode::Blocked => true,
     }
+}
+
+fn provider_parse_succeeded(parse_status: &str) -> bool {
+    matches!(parse_status, "parsed" | "extracted_json")
 }
 
 fn build_report(input: LiveLoopReportInput<'_>) -> LiveLoopReport {
@@ -1468,6 +1639,7 @@ mod provider_backed_tests {
     use std::sync::{Mutex, OnceLock};
 
     use super::*;
+    use tempfile::tempdir;
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -1588,6 +1760,95 @@ mod provider_backed_tests {
     }
 
     #[test]
+    fn provider_backed_extracts_fenced_json_edit_array() {
+        let model_ref = ModelRef::parse("openai/test-model").expect("model parses");
+        let outcome = provider_edit_from_response(ProviderEditResponseInput {
+            attempt_index: 1,
+            mode: "mock",
+            model_ref: &model_ref,
+            repair: None,
+            dispatched: true,
+            finish_reason: Some("stop".to_string()),
+            usage: None,
+            response_text: "Here is the edit set:\n```json\n{\"edits\":[{\"relative_path\":\"index.html\",\"contents\":\"<!doctype html>\\n\",\"reason_code\":\"provider_index\"},{\"relative_path\":\"src/main.js\",\"contents\":\"console.log('ok');\\n\",\"reason_code\":\"provider_main\"}]}\n```",
+        });
+
+        let ProviderEditOutcome::Ready(resolved) = outcome else {
+            panic!("provider fenced edit array should parse");
+        };
+        assert_eq!(resolved.report.parse_status, "extracted_json");
+        assert_eq!(
+            resolved.report.edit_relative_path.as_deref(),
+            Some("index.html,src/main.js")
+        );
+        assert_eq!(resolved.edits.len(), 2);
+        assert_eq!(resolved.edits[0].relative_path, PathBuf::from("index.html"));
+        assert_eq!(
+            resolved.edits[1].relative_path,
+            PathBuf::from("src/main.js")
+        );
+    }
+
+    #[test]
+    fn provider_backed_parses_file_map_payload() {
+        let model_ref = ModelRef::parse("openai/test-model").expect("model parses");
+        let outcome = provider_edit_from_response(ProviderEditResponseInput {
+            attempt_index: 1,
+            mode: "mock",
+            model_ref: &model_ref,
+            repair: None,
+            dispatched: true,
+            finish_reason: Some("stop".to_string()),
+            usage: None,
+            response_text: r#"{"files":{"index.html":"<!doctype html>\n","src/main.js":"console.log('ok');\n"},"reason_code":"provider_files"}"#,
+        });
+
+        let ProviderEditOutcome::Ready(resolved) = outcome else {
+            panic!("provider file map should parse");
+        };
+        assert_eq!(resolved.report.parse_status, "parsed");
+        assert_eq!(resolved.edits.len(), 2);
+        assert_eq!(resolved.edits[0].reason_code, "provider_files");
+        assert_eq!(resolved.edits[1].reason_code, "provider_files");
+        assert_eq!(
+            resolved.report.edit_relative_path.as_deref(),
+            Some("index.html,src/main.js")
+        );
+    }
+
+    #[test]
+    fn provider_backed_extracted_json_satisfies_provider_modes() {
+        let report = ProviderProofReport {
+            attempt_index: 1,
+            mode: "live",
+            provider: "openrouter".to_string(),
+            model: "qwen/qwen3.7-max".to_string(),
+            dispatched: true,
+            parse_status: "extracted_json",
+            reason_code: "provider_edit_parsed".to_string(),
+            finish_reason: Some("stop".to_string()),
+            usage: None,
+            response_text_bytes: Some(128),
+            response_text_sha256: Some("abc123".to_string()),
+            edit_relative_path: Some("status.txt,src/main.js".to_string()),
+            edit_reason_code: Some("provider_fix".to_string()),
+            repair_context_included: false,
+            failed_verifier_count: 0,
+            diff_context_bytes: None,
+            error: None,
+        };
+
+        assert!(provider_report_satisfies_mode(
+            HarnessMode::ProviderSuccess,
+            Some(&report)
+        ));
+        assert!(provider_report_satisfies_mode(
+            HarnessMode::RealRepo,
+            Some(&report)
+        ));
+    }
+
+    #[test]
     fn provider_backed_malformed_response_fails_closed() {
         let model_ref = ModelRef::parse("openai/test-model").expect("model parses");
         let repair = repair_context_fixture();
@@ -1644,6 +1905,77 @@ mod provider_backed_tests {
         assert!(rendered.contains("expected repaired"));
         assert!(rendered.contains("status.txt"));
         assert!(rendered.contains("+pass"));
+    }
+
+    #[test]
+    fn provider_prompt_includes_real_repo_context_and_complete_edit_instruction() {
+        let temp = tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(repo.join("src")).expect("repo dirs");
+        std::process::Command::new("git")
+            .args(["init", "-b", "master"])
+            .current_dir(&repo)
+            .status()
+            .expect("git init");
+        std::process::Command::new("git")
+            .args(["config", "user.email", "provider-test@example.test"])
+            .current_dir(&repo)
+            .status()
+            .expect("git config email");
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Provider Test"])
+            .current_dir(&repo)
+            .status()
+            .expect("git config name");
+        fs::write(repo.join("README.md"), "existing readme\n").expect("readme");
+        fs::write(repo.join("src/main.js"), "console.log('old');\n").expect("main");
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo)
+            .status()
+            .expect("git add");
+        std::process::Command::new("git")
+            .args(["commit", "-m", "seed repo"])
+            .current_dir(&repo)
+            .status()
+            .expect("git commit");
+
+        let state = CodingMissionState::create(CodingMissionConfig {
+            state_root: temp.path().join("state"),
+            mission_id: "provider-prompt-alpha".to_string(),
+            session_key: "session-alpha".to_string(),
+            repo_path: repo,
+            issue_url: None,
+            goal: "Create index.html and update src/main.js".to_string(),
+            base_branch: "master".to_string(),
+            branch_prefix: "codex/".to_string(),
+            verifier_commands: vec![
+                "test -f index.html".to_string(),
+                "grep -q Phaser src/main.js".to_string(),
+            ],
+            pr_mode: CodingMissionPrMode::Disabled,
+            allowed_roots: vec![temp.path().to_path_buf()],
+            created_unix_ms: 1_800_000_000_000,
+        })
+        .expect("create state");
+
+        let prompt = provider_prompt(
+            &state,
+            &ProviderAttemptContext {
+                attempt_index: 1,
+                repair: None,
+            },
+        )
+        .expect("provider prompt");
+
+        assert!(prompt.contains("Repository context"));
+        assert!(prompt.contains("Tracked and untracked files"));
+        assert!(prompt.contains("README.md"));
+        assert!(prompt.contains("--- src/main.js ---"));
+        assert!(prompt.contains("console.log('old');"));
+        assert!(prompt.contains("Return a complete edit set for all files needed"));
+        assert!(prompt.contains("\"files\""));
+        assert!(prompt.contains("grep -q Phaser src/main.js"));
     }
 
     fn repair_context_fixture() -> ProviderRepairContext {

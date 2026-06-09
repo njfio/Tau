@@ -591,7 +591,9 @@ pub fn register_builtin_tools(agent: &mut Agent, policy: ToolPolicy) {
     let policy = Arc::new(policy);
     agent.register_tool(ReadTool::new(policy.clone()));
     agent.register_tool(WriteTool::new(policy.clone()));
+    agent.register_tool(WriteManyTool::new(policy.clone()));
     agent.register_tool(EditTool::new(policy.clone()));
+    agent.register_tool(EditManyTool::new(policy.clone()));
     agent.register_tool(MemoryWriteTool::new(policy.clone()));
     agent.register_tool(MemoryReadTool::new(policy.clone()));
     agent.register_tool(MemoryDeleteTool::new(policy.clone()));

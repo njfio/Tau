@@ -256,7 +256,7 @@ require(attempts[0]["repair_context_included"] is False, attempts[0])
 repair = attempts[1]
 require(repair["mode"] == "live", repair)
 require(repair["dispatched"] is True, repair)
-require(repair["parse_status"] == "parsed", repair)
+require(repair["parse_status"] in {"parsed", "extracted_json"}, repair)
 require(repair["repair_context_included"] is True, repair)
 require(repair["failed_verifier_count"] >= 1, repair)
 require(repair["diff_context_bytes"] and repair["diff_context_bytes"] > 0, repair)

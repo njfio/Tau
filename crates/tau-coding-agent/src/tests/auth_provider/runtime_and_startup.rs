@@ -1200,6 +1200,265 @@ async fn integration_run_prompt_with_cancellation_promotes_textual_write_tool_ca
 }
 
 #[tokio::test]
+async fn integration_run_prompt_with_cancellation_promotes_textual_write_many_tool_call_and_persists_files(
+) {
+    let temp = tempdir().expect("tempdir");
+    let index_path = temp.path().join("index.html");
+    let script_path = temp.path().join("src/main.js");
+    let session_path = temp.path().join("textual-write-many-session.jsonl");
+    let mut store = SessionStore::load(&session_path).expect("load session");
+    let active_head = store
+        .append_messages(None, &[Message::system("sys")])
+        .expect("append system")
+        .expect("system head");
+    let mut runtime = Some(SessionRuntime {
+        store,
+        active_head: Some(active_head),
+    });
+
+    let payload = serde_json::json!({
+        "tool_calls": [{
+            "id": "call-write-many-1",
+            "name": "write_many",
+            "arguments": {
+                "files": [
+                    {
+                        "path": index_path.display().to_string(),
+                        "content": "<!doctype html><div id=\"game\"></div>"
+                    },
+                    {
+                        "path": script_path.display().to_string(),
+                        "content": "console.log('space roguelike ready');"
+                    }
+                ]
+            }
+        }]
+    })
+    .to_string();
+    let responses = VecDeque::from(vec![
+        ChatResponse {
+            message: Message::assistant_text(payload),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_text("batch write complete"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+    ]);
+    let mut agent = Agent::new(
+        Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        }),
+        AgentConfig::default(),
+    );
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+
+    let status = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "write index.html and src/main.js in one batch",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect("prompt should succeed");
+    assert_eq!(status, PromptRunStatus::Completed);
+    assert_eq!(
+        std::fs::read_to_string(&index_path).expect("written index"),
+        "<!doctype html><div id=\"game\"></div>"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&script_path).expect("written script"),
+        "console.log('space roguelike ready');"
+    );
+    let persisted = std::fs::read_to_string(&session_path).expect("read session file");
+    assert!(persisted.contains("\"role\":\"tool\""));
+    assert!(persisted.contains("\"tool_name\":\"write_many\""));
+}
+
+#[tokio::test]
+async fn integration_run_prompt_with_cancellation_promotes_textual_edit_many_tool_call_and_patches_files(
+) {
+    let temp = tempdir().expect("tempdir");
+    let index_path = temp.path().join("index.html");
+    let script_path = temp.path().join("src/main.js");
+    std::fs::create_dir_all(script_path.parent().expect("script parent")).expect("create src");
+    std::fs::write(&index_path, "<main>Old game</main>").expect("write index");
+    std::fs::write(&script_path, "const status = 'old';\nconst wave = 1;\n").expect("write script");
+    let session_path = temp.path().join("textual-edit-many-session.jsonl");
+    let mut store = SessionStore::load(&session_path).expect("load session");
+    let active_head = store
+        .append_messages(None, &[Message::system("sys")])
+        .expect("append system")
+        .expect("system head");
+    let mut runtime = Some(SessionRuntime {
+        store,
+        active_head: Some(active_head),
+    });
+
+    let payload = serde_json::json!({
+        "tool_calls": [{
+            "id": "call-edit-many-1",
+            "name": "edit_many",
+            "arguments": {
+                "edits": [
+                    {
+                        "path": index_path.display().to_string(),
+                        "find": "Old game",
+                        "replace": "Patched game"
+                    },
+                    {
+                        "path": script_path.display().to_string(),
+                        "find": "old",
+                        "replace": "ready"
+                    }
+                ]
+            }
+        }]
+    })
+    .to_string();
+    let responses = VecDeque::from(vec![
+        ChatResponse {
+            message: Message::assistant_text(payload),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_text("batch edit complete"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+    ]);
+    let mut agent = Agent::new(
+        Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        }),
+        AgentConfig::default(),
+    );
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+
+    let status = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "patch index.html and src/main.js in one batch",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect("prompt should succeed");
+    assert_eq!(status, PromptRunStatus::Completed);
+    assert_eq!(
+        std::fs::read_to_string(&index_path).expect("patched index"),
+        "<main>Patched game</main>"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&script_path).expect("patched script"),
+        "const status = 'ready';\nconst wave = 1;\n"
+    );
+    let persisted = std::fs::read_to_string(&session_path).expect("read session file");
+    assert!(persisted.contains("\"role\":\"tool\""));
+    assert!(persisted.contains("\"tool_name\":\"edit_many\""));
+}
+
+#[tokio::test]
+async fn integration_run_prompt_with_cancellation_promotes_textual_edit_many_unified_diff_tool_call_and_patches_files(
+) {
+    let temp = tempdir().expect("tempdir");
+    let index_path = temp.path().join("index.html");
+    let script_path = temp.path().join("src/main.js");
+    std::fs::create_dir_all(script_path.parent().expect("script parent")).expect("create src");
+    std::fs::write(&index_path, "<main>Old game</main>\n").expect("write index");
+    std::fs::write(&script_path, "const status = 'old';\nconst wave = 1;\n").expect("write script");
+    let session_path = temp.path().join("textual-edit-many-diff-session.jsonl");
+    let mut store = SessionStore::load(&session_path).expect("load session");
+    let active_head = store
+        .append_messages(None, &[Message::system("sys")])
+        .expect("append system")
+        .expect("system head");
+    let mut runtime = Some(SessionRuntime {
+        store,
+        active_head: Some(active_head),
+    });
+
+    let diff = format!(
+        "\
+--- {index}
++++ {index}
+@@ -1 +1 @@
+-<main>Old game</main>
++<main>Patched game</main>
+--- {script}
++++ {script}
+@@ -1,2 +1,2 @@
+-const status = 'old';
++const status = 'ready';
+ const wave = 1;
+",
+        index = index_path.display(),
+        script = script_path.display()
+    );
+    let payload = serde_json::json!({
+        "tool_calls": [{
+            "id": "call-edit-many-diff-1",
+            "name": "edit_many",
+            "arguments": {
+                "diff": diff
+            }
+        }]
+    })
+    .to_string();
+    let responses = VecDeque::from(vec![
+        ChatResponse {
+            message: Message::assistant_text(payload),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_text("batch diff edit complete"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+    ]);
+    let mut agent = Agent::new(
+        Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        }),
+        AgentConfig::default(),
+    );
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+
+    let status = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "patch index.html and src/main.js with a unified diff in one batch",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect("prompt should succeed");
+    assert_eq!(status, PromptRunStatus::Completed);
+    assert_eq!(
+        std::fs::read_to_string(&index_path).expect("patched index"),
+        "<main>Patched game</main>\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&script_path).expect("patched script"),
+        "const status = 'ready';\nconst wave = 1;\n"
+    );
+    let persisted = std::fs::read_to_string(&session_path).expect("read session file");
+    assert!(persisted.contains("\"role\":\"tool\""));
+    assert!(persisted.contains("\"tool_name\":\"edit_many\""));
+}
+
+#[tokio::test]
 async fn integration_run_prompt_with_cancellation_promotes_textual_bash_tool_calls_and_persists_session_history(
 ) {
     let temp = tempdir().expect("tempdir");

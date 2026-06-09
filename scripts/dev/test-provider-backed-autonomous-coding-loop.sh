@@ -111,7 +111,7 @@ require(report["pr_ready"]["status"] == "manual_ready", "manual pr-ready state m
 provider = report["provider"]
 require(provider["mode"] == "live", "provider mode should be live")
 require(provider["dispatched"] is True, "provider dispatch flag missing")
-require(provider["parse_status"] == "parsed", f"provider parse failed: {provider}")
+require(provider["parse_status"] in {"parsed", "extracted_json"}, f"provider parse failed: {provider}")
 require(provider["edit_relative_path"] == "status.txt", "provider edit path mismatch")
 require(provider["response_text_sha256"], "provider response hash missing")
 require(provider["response_text_bytes"] > 0, "provider response byte count missing")

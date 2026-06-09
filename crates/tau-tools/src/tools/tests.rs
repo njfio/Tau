@@ -21,13 +21,13 @@ use super::{
     is_command_allowed, is_session_candidate_path, leading_executable,
     os_sandbox_docker_network_name, os_sandbox_mode_name, os_sandbox_policy_mode_name,
     redact_secrets, register_builtin_tools, resolve_sandbox_spec, truncate_bytes, AgentTool,
-    BashCommandProfile, BashTool, BranchTool, EditTool, HttpTool, JobsCancelTool, JobsCreateTool,
-    JobsListTool, JobsStatusTool, MemoryDeleteTool, MemoryReadTool, MemorySearchTool,
-    MemoryTreeTool, MemoryTypeImportanceProfile, MemoryWriteTool, OsSandboxDockerNetwork,
-    OsSandboxMode, OsSandboxPolicyMode, ReactTool, RedoTool, SendFileTool, SessionsHistoryTool,
-    SessionsListTool, SessionsSearchTool, SessionsSendTool, SessionsStatsTool, SkipTool,
-    ToolBuilderTool, ToolExecutionResult, ToolPolicy, ToolPolicyPreset,
-    ToolRateLimitExceededBehavior, UndoTool, WriteTool,
+    BashCommandProfile, BashTool, BranchTool, EditManyTool, EditTool, HttpTool, JobsCancelTool,
+    JobsCreateTool, JobsListTool, JobsStatusTool, MemoryDeleteTool, MemoryReadTool,
+    MemorySearchTool, MemoryTreeTool, MemoryTypeImportanceProfile, MemoryWriteTool,
+    OsSandboxDockerNetwork, OsSandboxMode, OsSandboxPolicyMode, ReactTool, RedoTool, SendFileTool,
+    SessionsHistoryTool, SessionsListTool, SessionsSearchTool, SessionsSendTool, SessionsStatsTool,
+    SkipTool, ToolBuilderTool, ToolExecutionResult, ToolPolicy, ToolPolicyPreset,
+    ToolRateLimitExceededBehavior, UndoTool, WriteManyTool, WriteTool,
 };
 use tau_access::ApprovalAction;
 use tau_agent_core::{Agent, AgentConfig};
@@ -239,7 +239,9 @@ fn unit_builtin_agent_tool_name_registry_includes_session_tools() {
     let names = builtin_agent_tool_names();
     assert!(names.contains(&"read"));
     assert!(names.contains(&"write"));
+    assert!(names.contains(&"write_many"));
     assert!(names.contains(&"edit"));
+    assert!(names.contains(&"edit_many"));
     assert!(names.contains(&"memory_write"));
     assert!(names.contains(&"memory_read"));
     assert!(names.contains(&"memory_delete"));
@@ -321,6 +323,50 @@ fn spec_2525_c01_register_builtin_tools_registers_send_file_tool() {
     let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
     register_builtin_tools(&mut agent, ToolPolicy::new(vec![temp.path().to_path_buf()]));
     assert!(agent.has_tool("send_file"));
+}
+
+#[test]
+fn write_many_register_builtin_tools_registers_batch_write_tool() {
+    struct NoopClient;
+
+    #[async_trait]
+    impl tau_ai::LlmClient for NoopClient {
+        async fn complete(
+            &self,
+            _request: tau_ai::ChatRequest,
+        ) -> Result<tau_ai::ChatResponse, tau_ai::TauAiError> {
+            Err(tau_ai::TauAiError::InvalidResponse(
+                "noop client should not be invoked in registry test".to_string(),
+            ))
+        }
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+    register_builtin_tools(&mut agent, ToolPolicy::new(vec![temp.path().to_path_buf()]));
+    assert!(agent.has_tool("write_many"));
+}
+
+#[test]
+fn edit_many_register_builtin_tools_registers_batch_edit_tool() {
+    struct NoopClient;
+
+    #[async_trait]
+    impl tau_ai::LlmClient for NoopClient {
+        async fn complete(
+            &self,
+            _request: tau_ai::ChatRequest,
+        ) -> Result<tau_ai::ChatResponse, tau_ai::TauAiError> {
+            Err(tau_ai::TauAiError::InvalidResponse(
+                "noop client should not be invoked in registry test".to_string(),
+            ))
+        }
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+    register_builtin_tools(&mut agent, ToolPolicy::new(vec![temp.path().to_path_buf()]));
+    assert!(agent.has_tool("edit_many"));
 }
 
 #[tokio::test]
@@ -2936,6 +2982,515 @@ async fn edit_tool_replaces_all_matches() {
 }
 
 #[tokio::test]
+async fn edit_many_tool_patches_multiple_files_after_preflight() {
+    let temp = tempdir().expect("tempdir");
+    let index = temp.path().join("index.html");
+    let script = temp.path().join("src/main.js");
+    tokio::fs::create_dir_all(script.parent().expect("script parent"))
+        .await
+        .expect("create src");
+    tokio::fs::write(&index, "<main>Old title</main>")
+        .await
+        .expect("write index");
+    tokio::fs::write(&script, "const wave = 1;\nconst waveLabel = 'old';\n")
+        .await
+        .expect("write script");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let result = tool
+        .execute(serde_json::json!({
+            "edits": [
+                {
+                    "path": index,
+                    "find": "Old title",
+                    "replace": "New title"
+                },
+                {
+                    "path": script,
+                    "find": "old",
+                    "replace": "ready"
+                }
+            ]
+        }))
+        .await;
+
+    assert!(!result.is_error, "{}", result.content);
+    assert_eq!(
+        result
+            .content
+            .get("file_count")
+            .and_then(serde_json::Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("index.html"))
+            .await
+            .expect("read index"),
+        "<main>New title</main>"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("src/main.js"))
+            .await
+            .expect("read script"),
+        "const wave = 1;\nconst waveLabel = 'ready';\n"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_applies_multiple_patches_to_same_file_in_order() {
+    let temp = tempdir().expect("tempdir");
+    let file = temp.path().join("game.js");
+    tokio::fs::write(&file, "const title = 'old';\nconst mode = 'plain';\n")
+        .await
+        .expect("write file");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let result = tool
+        .execute(serde_json::json!({
+            "edits": [
+                {
+                    "path": file,
+                    "find": "old",
+                    "replace": "space"
+                },
+                {
+                    "path": file,
+                    "find": "plain",
+                    "replace": "roguelike"
+                }
+            ]
+        }))
+        .await;
+
+    assert!(!result.is_error, "{}", result.content);
+    assert_eq!(
+        result
+            .content
+            .get("file_count")
+            .and_then(serde_json::Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        result
+            .content
+            .get("edit_count")
+            .and_then(serde_json::Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("game.js"))
+            .await
+            .expect("read file"),
+        "const title = 'space';\nconst mode = 'roguelike';\n"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_rejects_missing_match_before_partial_write() {
+    let temp = tempdir().expect("tempdir");
+    let first = temp.path().join("first.txt");
+    let second = temp.path().join("second.txt");
+    tokio::fs::write(&first, "alpha")
+        .await
+        .expect("write first");
+    tokio::fs::write(&second, "beta")
+        .await
+        .expect("write second");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let result = tool
+        .execute(serde_json::json!({
+            "edits": [
+                {
+                    "path": first,
+                    "find": "alpha",
+                    "replace": "ALPHA"
+                },
+                {
+                    "path": second,
+                    "find": "missing",
+                    "replace": "MISSING"
+                }
+            ]
+        }))
+        .await;
+
+    assert!(result.is_error);
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("first.txt"))
+            .await
+            .expect("read first"),
+        "alpha"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("second.txt"))
+            .await
+            .expect("read second"),
+        "beta"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_rejects_escape_before_partial_write() {
+    let temp = tempdir().expect("tempdir");
+    let outside = tempdir().expect("outside");
+    let safe = temp.path().join("safe.txt");
+    let escape = outside.path().join("escape.txt");
+    tokio::fs::write(&safe, "safe").await.expect("write safe");
+    tokio::fs::write(&escape, "escape")
+        .await
+        .expect("write escape");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let result = tool
+        .execute(serde_json::json!({
+            "edits": [
+                {
+                    "path": safe,
+                    "find": "safe",
+                    "replace": "SAFE"
+                },
+                {
+                    "path": escape,
+                    "find": "escape",
+                    "replace": "ESCAPE"
+                }
+            ]
+        }))
+        .await;
+
+    assert!(result.is_error);
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("safe.txt"))
+            .await
+            .expect("read safe"),
+        "safe"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(outside.path().join("escape.txt"))
+            .await
+            .expect("read escape"),
+        "escape"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_applies_unified_diff_across_files_after_preflight() {
+    let temp = tempdir().expect("tempdir");
+    tokio::fs::create_dir_all(temp.path().join("src"))
+        .await
+        .expect("create src");
+    tokio::fs::write(temp.path().join("index.html"), "<main>Old game</main>\n")
+        .await
+        .expect("write index");
+    tokio::fs::write(
+        temp.path().join("src/main.js"),
+        "const status = 'old';\nconst wave = 1;\n",
+    )
+    .await
+    .expect("write script");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let index_path = temp.path().join("index.html");
+    let script_path = temp.path().join("src/main.js");
+    let diff = format!(
+        "\
+diff --git a/index.html b/index.html
+--- {index}
++++ {index}
+@@ -1 +1 @@
+-<main>Old game</main>
++<main>Patched game</main>
+diff --git a/src/main.js b/src/main.js
+--- {script}
++++ {script}
+@@ -1,2 +1,2 @@
+-const status = 'old';
++const status = 'ready';
+ const wave = 1;
+",
+        index = index_path.display(),
+        script = script_path.display()
+    );
+    let result = tool
+        .execute(serde_json::json!({
+            "diff": diff,
+        }))
+        .await;
+
+    assert!(!result.is_error, "{}", result.content);
+    assert_eq!(
+        result
+            .content
+            .get("file_count")
+            .and_then(serde_json::Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("index.html"))
+            .await
+            .expect("read index"),
+        "<main>Patched game</main>\n"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("src/main.js"))
+            .await
+            .expect("read script"),
+        "const status = 'ready';\nconst wave = 1;\n"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_applies_unified_diff_multiple_hunks_to_same_file() {
+    let temp = tempdir().expect("tempdir");
+    tokio::fs::write(
+        temp.path().join("game.js"),
+        "const title = 'old';\nconst untouched = true;\nconst mode = 'plain';\n",
+    )
+    .await
+    .expect("write file");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let game_path = temp.path().join("game.js");
+    let diff = format!(
+        "\
+--- {game}
++++ {game}
+@@ -1,2 +1,2 @@
+-const title = 'old';
++const title = 'space';
+ const untouched = true;
+@@ -3 +3 @@
+-const mode = 'plain';
++const mode = 'roguelike';
+",
+        game = game_path.display()
+    );
+    let result = tool
+        .execute(serde_json::json!({
+            "diff": diff,
+        }))
+        .await;
+
+    assert!(!result.is_error, "{}", result.content);
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("game.js"))
+            .await
+            .expect("read file"),
+        "const title = 'space';\nconst untouched = true;\nconst mode = 'roguelike';\n"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_rejects_unified_diff_mismatch_before_partial_write() {
+    let temp = tempdir().expect("tempdir");
+    tokio::fs::create_dir_all(temp.path().join("src"))
+        .await
+        .expect("create src");
+    tokio::fs::write(temp.path().join("index.html"), "<main>Old game</main>\n")
+        .await
+        .expect("write index");
+    tokio::fs::write(temp.path().join("src/main.js"), "const status = 'old';\n")
+        .await
+        .expect("write script");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let index_path = temp.path().join("index.html");
+    let script_path = temp.path().join("src/main.js");
+    let diff = format!(
+        "\
+--- {index}
++++ {index}
+@@ -1 +1 @@
+-<main>Old game</main>
++<main>Patched game</main>
+--- {script}
++++ {script}
+@@ -1 +1 @@
+-const status = 'missing';
++const status = 'ready';
+",
+        index = index_path.display(),
+        script = script_path.display()
+    );
+    let result = tool
+        .execute(serde_json::json!({
+            "diff": diff,
+        }))
+        .await;
+
+    assert!(result.is_error);
+    assert!(result
+        .content
+        .to_string()
+        .contains("did not match current file contents"));
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("index.html"))
+            .await
+            .expect("read index"),
+        "<main>Old game</main>\n"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("src/main.js"))
+            .await
+            .expect("read script"),
+        "const status = 'old';\n"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_rejects_unified_diff_path_escape_before_partial_write() {
+    let temp = tempdir().expect("tempdir");
+    tokio::fs::write(temp.path().join("safe.txt"), "safe\n")
+        .await
+        .expect("write safe");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let safe_path = temp.path().join("safe.txt");
+    let diff = format!(
+        "\
+--- {safe}
++++ {safe}
+@@ -1 +1 @@
+-safe
++SAFE
+--- a/../escape.txt
++++ b/../escape.txt
+@@ -1 +1 @@
+-escape
++ESCAPE
+",
+        safe = safe_path.display()
+    );
+    let result = tool
+        .execute(serde_json::json!({
+            "diff": diff,
+        }))
+        .await;
+
+    assert!(result.is_error);
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("safe.txt"))
+            .await
+            .expect("read safe"),
+        "safe\n"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_rejects_unified_diff_rename_before_partial_write() {
+    let temp = tempdir().expect("tempdir");
+    tokio::fs::write(temp.path().join("safe.txt"), "safe\n")
+        .await
+        .expect("write safe");
+    tokio::fs::write(temp.path().join("old.txt"), "old\n")
+        .await
+        .expect("write old");
+    tokio::fs::write(temp.path().join("new.txt"), "old\n")
+        .await
+        .expect("write new");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let safe_path = temp.path().join("safe.txt");
+    let old_path = temp.path().join("old.txt");
+    let new_path = temp.path().join("new.txt");
+    let diff = format!(
+        "\
+--- {safe}
++++ {safe}
+@@ -1 +1 @@
+-safe
++SAFE
+--- {old}
++++ {new}
+@@ -1 +1 @@
+-old
++renamed
+",
+        safe = safe_path.display(),
+        old = old_path.display(),
+        new = new_path.display()
+    );
+    let result = tool
+        .execute(serde_json::json!({
+            "diff": diff,
+        }))
+        .await;
+
+    assert!(result.is_error);
+    assert!(result
+        .content
+        .to_string()
+        .contains("does not support renames"));
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("safe.txt"))
+            .await
+            .expect("read safe"),
+        "safe\n"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("new.txt"))
+            .await
+            .expect("read new"),
+        "old\n"
+    );
+}
+
+#[tokio::test]
+async fn edit_many_tool_rejects_malformed_unified_diff_hunk_header_before_partial_write() {
+    let temp = tempdir().expect("tempdir");
+    tokio::fs::write(temp.path().join("safe.txt"), "safe\n")
+        .await
+        .expect("write safe");
+    tokio::fs::write(temp.path().join("bad.txt"), "bad\n")
+        .await
+        .expect("write bad");
+
+    let tool = EditManyTool::new(test_policy(temp.path()));
+    let safe_path = temp.path().join("safe.txt");
+    let bad_path = temp.path().join("bad.txt");
+    let diff = format!(
+        "\
+--- {safe}
++++ {safe}
+@@ -1 +1 @@
+-safe
++SAFE
+--- {bad}
++++ {bad}
+@@ -1 malformed
+-bad
++BAD
+",
+        safe = safe_path.display(),
+        bad = bad_path.display()
+    );
+    let result = tool
+        .execute(serde_json::json!({
+            "diff": diff,
+        }))
+        .await;
+
+    assert!(result.is_error);
+    assert!(result
+        .content
+        .to_string()
+        .contains("malformed unified diff hunk header"));
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("safe.txt"))
+            .await
+            .expect("read safe"),
+        "safe\n"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("bad.txt"))
+            .await
+            .expect("read bad"),
+        "bad\n"
+    );
+}
+
+#[tokio::test]
 async fn regression_edit_tool_rejects_result_larger_than_write_limit() {
     let temp = tempdir().expect("tempdir");
     let file = temp.path().join("test.txt");
@@ -3071,6 +3626,103 @@ async fn write_tool_creates_parent_directory() {
         .await
         .expect("read file");
     assert_eq!(content, "hello");
+}
+
+#[tokio::test]
+async fn write_many_tool_writes_multiple_files_after_preflight() {
+    let temp = tempdir().expect("tempdir");
+    let tool = WriteManyTool::new(test_policy(temp.path()));
+
+    let result = tool
+        .execute(serde_json::json!({
+            "files": [
+                {
+                    "path": temp.path().join("index.html"),
+                    "content": "<!doctype html>"
+                },
+                {
+                    "path": temp.path().join("src/main.js"),
+                    "content": "console.log('ok');"
+                }
+            ]
+        }))
+        .await;
+
+    assert!(!result.is_error);
+    assert_eq!(
+        result
+            .content
+            .get("file_count")
+            .and_then(serde_json::Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("index.html"))
+            .await
+            .expect("read index"),
+        "<!doctype html>"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(temp.path().join("src/main.js"))
+            .await
+            .expect("read main"),
+        "console.log('ok');"
+    );
+}
+
+#[tokio::test]
+async fn write_many_tool_rejects_escape_before_partial_write() {
+    let temp = tempdir().expect("tempdir");
+    let outside = tempdir().expect("outside");
+    let tool = WriteManyTool::new(test_policy(temp.path()));
+
+    let result = tool
+        .execute(serde_json::json!({
+            "files": [
+                {
+                    "path": temp.path().join("safe.txt"),
+                    "content": "safe"
+                },
+                {
+                    "path": outside.path().join("escape.txt"),
+                    "content": "escape"
+                }
+            ]
+        }))
+        .await;
+
+    assert!(result.is_error);
+    assert!(!temp.path().join("safe.txt").exists());
+    assert!(!outside.path().join("escape.txt").exists());
+}
+
+#[tokio::test]
+async fn write_many_tool_rejects_duplicate_paths_before_write() {
+    let temp = tempdir().expect("tempdir");
+    let target = temp.path().join("same.txt");
+    let tool = WriteManyTool::new(test_policy(temp.path()));
+
+    let result = tool
+        .execute(serde_json::json!({
+            "files": [
+                {
+                    "path": target.clone(),
+                    "content": "first"
+                },
+                {
+                    "path": target.clone(),
+                    "content": "second"
+                }
+            ]
+        }))
+        .await;
+
+    assert!(result.is_error);
+    assert!(!target.exists());
+    assert!(result
+        .content
+        .to_string()
+        .contains("duplicate write_many path"));
 }
 
 #[tokio::test]
