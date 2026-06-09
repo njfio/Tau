@@ -134,6 +134,7 @@ the repo:
 | Guarded auto-merge/intake | `scripts/dev/test-autonomous-coding-automerge-intake.sh` | Protected-branch-safe auto-merge request gates and no-authority issue intake |
 | Issue-to-merge orchestration | `scripts/dev/test-autonomous-coding-issue-to-merge.sh` | One-command issue intake -> durable job -> verifier -> draft PR -> guarded auto-merge, plus no-authority block |
 | Autonomous coding gauntlet | `scripts/dev/test-autonomous-coding-gauntlet.sh` | Real fixture repos for provider full-file repair, unified diff repair, malformed provider block, missing verifier block, built-in OpenRouter-compatible repair, and safe auto-merge flags |
+| Tau-internal autonomous coding gauntlet | `scripts/dev/test-real-repo-autonomous-coding-gauntlet.sh` | Temporary Tau worktree cases for docs-only, single-file, multi-file, failing-test repair, CLI flag, flaky verifier, malformed provider rejection, and stale-lease operator status |
 | Gateway auth/session | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session lifecycle smoke path |
 | Operator maturity | `./scripts/verify/m295-operator-maturity-wave.sh` | TUI, RL, and auth maturity checks |
 

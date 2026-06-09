@@ -245,6 +245,18 @@ now report `unsafe`, `too_broad`, `underspecified`, `missing_verifier`,
 `missing_edit_or_provider_authority`, `missing_credentials`, or `solvable`,
 along with the exact verifier, edit/provider, or credential input still needed.
 
+The broadest deterministic benchmark for this path is:
+
+```bash
+CARGO_TARGET_DIR=/tmp/rust_pi-3805-target scripts/dev/test-real-repo-autonomous-coding-gauntlet.sh
+```
+
+It runs a temporary Tau worktree through docs-only, single-file, multi-file,
+failing-test repair, CLI flag, flaky verifier, malformed provider rejection, and
+stale-lease operator-status cases. The provider in this gauntlet is a bounded
+fake adapter so the benchmark stays deterministic; live-provider proof remains
+in the opt-in provider scripts.
+
 ## Boundaries
 
 This loop prepares PR-ready evidence, can create a draft PR when draft mode and
