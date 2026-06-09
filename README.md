@@ -50,9 +50,9 @@ contract-driven; full workspace membership is in [`Cargo.toml`](Cargo.toml).
   built-in adapter that reads local env/`.env` configuration and stores
   sanitized provider-call metadata.
 - Background autonomous coding job records with submit/run/replay/recover/status
-  commands, operator recovery classification, `mark-blocked`, plus guarded
-  GitHub auto-merge requests when explicit policy, GitHub auth, PR URL, and
-  branch protections allow it.
+  commands, `tau-unified` job list/inspect/recover/replay/block operator flows,
+  plus guarded GitHub auto-merge requests when explicit policy, GitHub auth, PR
+  URL, and branch protections allow it.
 - A one-command `issue-to-merge` loop that ingests issue context, runs a durable
   coding job, produces PR-ready or draft-PR evidence, and optionally requests
   protected-branch-safe auto-merge.
@@ -80,22 +80,29 @@ What is landed:
 - Autonomous coding jobs can request normal GitHub auto-merge with `gh pr merge
   --auto` only after explicit policy/auth/PR-ready gates pass. Tau does not use
   admin override flags.
+- Draft PR publication is the safe default for authorized issue-to-merge jobs:
+  Tau creates or updates a draft PR when GitHub auth is available, and records
+  the exact manual `gh pr create --draft` command when it is not.
 - `issue-to-merge` can run intake, job submission, verifier-gated execution,
   PR-ready or draft-PR publication, and optional auto-merge request in one
   command.
 - Arbitrary issue intake without verifier/edit authority produces a durable
   blocked authority plan instead of mutating the repository. Intake now
-  classifies blockers such as unsafe, too broad, underspecified, missing
-  verifier, missing edit/provider authority, and missing credentials.
+  generates a deterministic verifier plan and classifies blockers such as unsafe,
+  too broad, underspecified, missing verifier, missing edit/provider authority,
+  and missing credentials.
+- `tau-unified jobs`, `tau-unified job <job-id>`, `tau-unified recover`,
+  `tau-unified replay <job-id>`, and `tau-unified block <job-id>` expose the
+  durable recovery loop without hand-editing state paths.
 
 What is still product work:
 
 - arbitrary issue selection and broad issue-to-PR autonomy with minimal human
   steering when no verifier/edit authority has been supplied,
-- a polished command-center UX for durable stuck-job recovery, replay, and
-  crash-resume across every coding path,
-- arbitrary spec/issue-to-PR work with automatic PR opening when verifier and
-  provider/edit authority are not supplied,
+- graphical/dashboard polish for command-center workflows beyond the CLI
+  operator loop,
+- arbitrary spec/issue-to-PR work when verifier and provider/edit authority are
+  not supplied,
 - large-scale production policy optimization for RL.
 
 ## Operator Experience
@@ -151,14 +158,14 @@ credentials, network access, and the configured model.
 | Multi-channel transports | Operational | Bridges exist with connector-specific maturity and live credential requirements |
 | Prompt optimization/training | Integrated | Canonical training and rollout-state paths exist |
 | True RL | Integrated harness, not production policy ops | Deterministic rollout/GAE/PPO evidence exists; large-scale promotion operations are still expanding |
-| Dashboard/operator UX | Partial | Routes and diagnostics exist; polished command-center workflows are still being built |
-| Unified control plane | Partial | `tau-unified status` exposes broad runtime and autonomous coding job visibility, including stale lease/replay/recover/mark-blocked markers; proactive recovery/replay UX is not complete |
-| Autonomous coding | Partial but real | Controlled/provider-backed coding loops, durable provider repair, and authorized one-command issue-to-merge work; low-touch operation without supplied verifier/authority is intentionally blocked |
+| Dashboard/operator UX | Partial | Routes and diagnostics exist; `tau-unified` now has CLI job list/inspect/recover/replay/block, while graphical command-center workflows are still being built |
+| Unified control plane | Partial | `tau-unified status` exposes broad runtime and autonomous coding job visibility, and job subcommands drive stale lease/replay/recover/mark-blocked actions |
+| Autonomous coding | Partial but real | Controlled/provider-backed coding loops, durable provider repair, generated verifier plans for blocked intake, and authorized one-command issue-to-merge work; low-touch operation without supplied verifier/authority is intentionally blocked |
 
 ## Current Build Priorities
 
-- Make the autonomous coding loop more durable: stuck-job recovery, replay,
-  crash-resume, and operator status that are easy to trust.
+- Expand the autonomous coding loop from CLI operator recovery into a richer
+  dashboard command center.
 - Harden provider-backed repair inside durable `issue-to-merge` jobs with larger
   real-repo gauntlets, broader live-provider adapters, and clearer blocked-state
   recovery.

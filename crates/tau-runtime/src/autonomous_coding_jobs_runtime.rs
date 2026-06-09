@@ -222,6 +222,29 @@ pub struct AutonomousCodingAuthorityRequirement {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingVerifierPlan {
+    pub plan_kind: String,
+    pub summary: String,
+    #[serde(default)]
+    pub suggested_verifier_commands: Vec<String>,
+    #[serde(default)]
+    pub missing_inputs: Vec<String>,
+    pub next_action: String,
+}
+
+impl Default for AutonomousCodingVerifierPlan {
+    fn default() -> Self {
+        Self {
+            plan_kind: "unknown".to_string(),
+            summary: "No verifier plan recorded.".to_string(),
+            suggested_verifier_commands: Vec::new(),
+            missing_inputs: Vec::new(),
+            next_action: "Inspect the issue and provide verifier authority.".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AutonomousCodingIssueIntakeOutcome {
     pub schema_version: u32,
     pub intake_id: String,
@@ -237,6 +260,12 @@ pub struct AutonomousCodingIssueIntakeOutcome {
     pub repo_path: PathBuf,
     pub base_branch: String,
     pub required_authority: Vec<AutonomousCodingAuthorityRequirement>,
+    #[serde(default)]
+    pub verifier_plan: AutonomousCodingVerifierPlan,
+    #[serde(default)]
+    pub missing_inputs: Vec<String>,
+    #[serde(default)]
+    pub next_action_summary: String,
     pub created_unix_ms: u64,
     pub updated_unix_ms: u64,
 }
@@ -372,6 +401,16 @@ pub struct AutonomousCodingJobStatusSnapshot {
     pub pr_ready_command: Option<String>,
     #[serde(default)]
     pub pr_url: Option<String>,
+    #[serde(default)]
+    pub pr_publication_reason_code: Option<String>,
+    #[serde(default)]
+    pub pr_publication_command: Option<String>,
+    #[serde(default)]
+    pub pr_publication_stdout_path: Option<PathBuf>,
+    #[serde(default)]
+    pub pr_publication_stderr_path: Option<PathBuf>,
+    #[serde(default)]
+    pub pr_publication_exit_status: Option<i32>,
     pub recovery_count: u64,
     pub replay_count: u64,
     #[serde(default)]
@@ -923,6 +962,14 @@ impl AutonomousCodingJobRuntime {
         let repo_path = canonicalize_existing_dir(request.repo_path.as_path())?;
         let classification =
             classify_issue_intake(&request.issue_title, &request.issue_body, context);
+        let verifier_plan = issue_intake_verifier_plan(
+            &request.issue_title,
+            &request.issue_body,
+            classification.classification,
+            context,
+        );
+        let missing_inputs = verifier_plan.missing_inputs.clone();
+        let next_action_summary = verifier_plan.next_action.clone();
         let outcome = AutonomousCodingIssueIntakeOutcome {
             schema_version: AUTONOMOUS_CODING_JOB_SCHEMA_VERSION,
             intake_id: request.intake_id,
@@ -936,6 +983,9 @@ impl AutonomousCodingJobRuntime {
             repo_path,
             base_branch: request.base_branch,
             required_authority: issue_intake_required_authority(context),
+            verifier_plan,
+            missing_inputs,
+            next_action_summary,
             created_unix_ms: request.started_unix_ms,
             updated_unix_ms: request.started_unix_ms,
         };
@@ -1737,6 +1787,16 @@ fn build_status_snapshot(
         pr_state,
         pr_ready_command: pr_ready_bundle.map(|bundle| bundle.manual_gh_pr_create_command.clone()),
         pr_url: pr_ready_bundle.and_then(|bundle| bundle.pr_url.clone()),
+        pr_publication_reason_code: pr_ready_bundle
+            .and_then(|bundle| bundle.draft_pr_reason_code.clone()),
+        pr_publication_command: pr_ready_bundle
+            .filter(|bundle| !bundle.draft_pr_command_argv.is_empty())
+            .map(|bundle| bundle.draft_pr_command_argv.join(" ")),
+        pr_publication_stdout_path: pr_ready_bundle
+            .and_then(|bundle| bundle.draft_pr_stdout_path.clone()),
+        pr_publication_stderr_path: pr_ready_bundle
+            .and_then(|bundle| bundle.draft_pr_stderr_path.clone()),
+        pr_publication_exit_status: pr_ready_bundle.and_then(|bundle| bundle.draft_pr_exit_status),
         recovery_count: record.recovery_count,
         replay_count: record.replay_count,
         last_background_reason_code: record.last_background_reason_code.clone(),
@@ -1971,6 +2031,164 @@ fn issue_intake_required_authority(
         });
     }
     required
+}
+
+fn issue_intake_verifier_plan(
+    title: &str,
+    body: &str,
+    classification: AutonomousCodingIssueIntakeClassification,
+    context: IssueIntakeAuthorityContext,
+) -> AutonomousCodingVerifierPlan {
+    let combined = format!("{title}\n{body}");
+    let normalized = combined.to_ascii_lowercase();
+    let mut missing_inputs = Vec::new();
+    if !context.has_verifier {
+        missing_inputs.push(
+            "verifier command that proves the acceptance criteria before mutation".to_string(),
+        );
+    }
+    if !context.has_edit_or_provider_authority {
+        missing_inputs.push(
+            "controlled edit, provider repair adapter, or explicit mutation authority".to_string(),
+        );
+    }
+    if !context.has_required_credentials {
+        missing_inputs.push("provider or GitHub credential required for this path".to_string());
+    }
+
+    match classification {
+        AutonomousCodingIssueIntakeClassification::Unsafe => AutonomousCodingVerifierPlan {
+            plan_kind: "blocked_unsafe".to_string(),
+            summary: "Unsafe request must be rewritten before Tau can plan verification."
+                .to_string(),
+            suggested_verifier_commands: Vec::new(),
+            missing_inputs: vec![
+                "remove protected-branch bypass, force-push, secret, or exfiltration request"
+                    .to_string(),
+                "provide a safe branch/PR workflow".to_string(),
+            ],
+            next_action: "Rewrite the issue without unsafe authority requests.".to_string(),
+        },
+        AutonomousCodingIssueIntakeClassification::TooBroad => AutonomousCodingVerifierPlan {
+            plan_kind: "needs_scope".to_string(),
+            summary: "Issue is too broad for one verifier-gated autonomous job.".to_string(),
+            suggested_verifier_commands: vec![
+                "cargo fmt --check".to_string(),
+                "cargo test -p <affected-crate> <focused-test>".to_string(),
+            ],
+            missing_inputs: vec![
+                "specific module, crate, or file boundary".to_string(),
+                "one acceptance criterion that can be verified in one job".to_string(),
+                "focused verifier command".to_string(),
+            ],
+            next_action: "Split the issue into a bounded task with one verifier plan.".to_string(),
+        },
+        AutonomousCodingIssueIntakeClassification::Underspecified => AutonomousCodingVerifierPlan {
+            plan_kind: "needs_issue_detail".to_string(),
+            summary: "Issue lacks enough behavior detail to choose a verifier safely.".to_string(),
+            suggested_verifier_commands: vec![
+                "cargo fmt --check".to_string(),
+                "cargo test -p <affected-crate> <focused-test>".to_string(),
+            ],
+            missing_inputs: vec![
+                "expected behavior".to_string(),
+                "current failing behavior or reproduction".to_string(),
+                "affected file, command, route, or crate".to_string(),
+                "acceptance test or verifier command".to_string(),
+            ],
+            next_action: "Provide expected/current behavior and an affected surface.".to_string(),
+        },
+        _ if contains_any(&normalized, &["readme", "docs", "documentation", "guide"]) => {
+            let mut commands = vec!["git diff --check".to_string()];
+            if normalized.contains("readme") {
+                commands.push("grep -n <expected-text> README.md".to_string());
+            } else {
+                commands.push("grep -R -n <expected-text> docs specs README.md".to_string());
+            }
+            AutonomousCodingVerifierPlan {
+                plan_kind: "docs".to_string(),
+                summary: "Docs issue can be verified with text assertions and diff hygiene."
+                    .to_string(),
+                suggested_verifier_commands: commands,
+                missing_inputs,
+                next_action: if context.has_verifier && context.has_edit_or_provider_authority {
+                    "Run the verifier-gated docs job.".to_string()
+                } else {
+                    "Provide the missing verifier/edit authority or approve provider repair."
+                        .to_string()
+                },
+            }
+        }
+        _ if contains_any(
+            &normalized,
+            &["cli", "command", "flag", "argument", "subcommand"],
+        ) =>
+        {
+            let mut commands = vec![
+                "cargo fmt --check".to_string(),
+                "cargo test -p tau-coding-agent --bin tau_autonomous_coding_job <focused-test>"
+                    .to_string(),
+            ];
+            if normalized.contains("tau-unified") {
+                commands.push("scripts/run/test-tau-unified.sh".to_string());
+            }
+            AutonomousCodingVerifierPlan {
+                plan_kind: "cli".to_string(),
+                summary: "CLI issue should be verified with focused CLI tests and shell proof."
+                    .to_string(),
+                suggested_verifier_commands: commands,
+                missing_inputs,
+                next_action: "Provide/approve the focused CLI verifier and mutation authority."
+                    .to_string(),
+            }
+        }
+        _ if contains_any(
+            &normalized,
+            &["test", "panic", "rust", "crate", "compile", "clippy"],
+        ) =>
+        {
+            AutonomousCodingVerifierPlan {
+                plan_kind: "rust".to_string(),
+                summary: "Rust issue should be verified with focused tests before broader checks."
+                    .to_string(),
+                suggested_verifier_commands: vec![
+                    "cargo fmt --check".to_string(),
+                    "cargo test -p <affected-crate> <focused-test>".to_string(),
+                    "cargo clippy -p <affected-crate> --lib --tests -- -D warnings".to_string(),
+                ],
+                missing_inputs,
+                next_action:
+                    "Provide the affected crate/test target or approve Tau's focused verifier plan."
+                        .to_string(),
+            }
+        }
+        AutonomousCodingIssueIntakeClassification::Solvable
+        | AutonomousCodingIssueIntakeClassification::Ready => AutonomousCodingVerifierPlan {
+            plan_kind: "ready".to_string(),
+            summary: "Issue has enough supplied authority to enter the coding loop.".to_string(),
+            suggested_verifier_commands: Vec::new(),
+            missing_inputs,
+            next_action: "Run issue-to-merge with supplied verifier and edit/provider authority."
+                .to_string(),
+        },
+        AutonomousCodingIssueIntakeClassification::MissingVerifier
+        | AutonomousCodingIssueIntakeClassification::MissingEditOrProviderAuthority
+        | AutonomousCodingIssueIntakeClassification::MissingCredentials => {
+            AutonomousCodingVerifierPlan {
+                plan_kind: "generic_coding".to_string(),
+                summary: "Issue appears bounded, but Tau needs an explicit verifier and authority."
+                    .to_string(),
+                suggested_verifier_commands: vec![
+                    "cargo fmt --check".to_string(),
+                    "cargo test -p <affected-crate> <focused-test>".to_string(),
+                ],
+                missing_inputs,
+                next_action:
+                    "Provide verifier command plus edit/provider authority before mutation."
+                        .to_string(),
+            }
+        }
+    }
 }
 
 fn ensure_pr_ready_bundle(
@@ -2383,6 +2601,19 @@ mod tests {
             .required_authority
             .iter()
             .any(|item| item.reason_code == "edit_authority_required"));
+        assert_eq!(outcome.verifier_plan.plan_kind, "generic_coding");
+        assert!(outcome
+            .verifier_plan
+            .suggested_verifier_commands
+            .iter()
+            .any(|command| command.contains("cargo test")));
+        assert!(outcome
+            .missing_inputs
+            .iter()
+            .any(|input| input.contains("verifier command")));
+        assert!(outcome
+            .next_action_summary
+            .contains("Provide verifier command"));
         assert!(autonomous_coding_issue_intake_path(
             runtime.config().state_dir.as_path(),
             outcome.intake_id.as_str()
@@ -2409,6 +2640,64 @@ mod tests {
             AutonomousCodingIssueIntakeClassification::Unsafe
         );
         assert_eq!(unsafe_outcome.reason_code, "issue_intake_unsafe");
+        assert_eq!(unsafe_outcome.verifier_plan.plan_kind, "blocked_unsafe");
+    }
+
+    #[tokio::test]
+    async fn spec_3806_c03_c04_issue_intake_generates_verifier_plan() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+
+        let docs = runtime
+            .intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+                intake_id: "issue-3806-docs".to_string(),
+                issue_url: "https://github.com/njfio/Tau/issues/3806".to_string(),
+                issue_title: "Update README docs".to_string(),
+                issue_body: "Document the operator recovery workflow in the README and guide."
+                    .to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                base_branch: "master".to_string(),
+                started_unix_ms: 5_100,
+            })
+            .expect("docs intake");
+        assert_eq!(
+            docs.classification,
+            AutonomousCodingIssueIntakeClassification::MissingVerifier
+        );
+        assert_eq!(docs.verifier_plan.plan_kind, "docs");
+        assert!(docs
+            .verifier_plan
+            .suggested_verifier_commands
+            .iter()
+            .any(|command| command == "git diff --check"));
+        assert!(docs
+            .missing_inputs
+            .iter()
+            .any(|input| input.contains("provider")));
+
+        let broad = runtime
+            .intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+                intake_id: "issue-3806-broad".to_string(),
+                issue_url: "https://github.com/njfio/Tau/issues/3806".to_string(),
+                issue_title: "Fix everything".to_string(),
+                issue_body: "Make the entire repo fully autonomous forever with any issue."
+                    .to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                base_branch: "master".to_string(),
+                started_unix_ms: 5_101,
+            })
+            .expect("broad intake");
+        assert_eq!(
+            broad.classification,
+            AutonomousCodingIssueIntakeClassification::TooBroad
+        );
+        assert_eq!(broad.verifier_plan.plan_kind, "needs_scope");
+        assert!(broad
+            .verifier_plan
+            .missing_inputs
+            .iter()
+            .any(|input| input.contains("specific module")));
+        assert!(broad.next_action_summary.contains("Split the issue"));
     }
 
     #[tokio::test]
@@ -2478,6 +2767,123 @@ mod tests {
         assert!(argv.contains("--squash\n"));
         assert!(argv.contains("--delete-branch\n"));
         assert!(!argv.contains("--admin"));
+    }
+
+    #[tokio::test]
+    async fn spec_3806_c05_draft_pr_creation_records_github_evidence() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let gh = fixture.fake_gh_create_or_update(None, "https://github.com/njfio/Tau/pull/3806");
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3806-draft-create".to_string(),
+                mission_id: "issue-3806-draft-create-mission".to_string(),
+                session_key: "issue-3806-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3806".to_string(),
+                issue_title: "Create draft PR by default".to_string(),
+                issue_body: "Run the authorized loop and publish a draft PR.".to_string(),
+                goal: "Make verifier pass and create draft PR".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-3806-draft-".to_string(),
+                verifier_commands: vec!["grep -q pass status.txt".to_string()],
+                pr_mode: CodingMissionPrMode::Draft,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: vec![CodingMissionControlledEdit {
+                    relative_path: PathBuf::from("status.txt"),
+                    contents: "pass\n".to_string(),
+                    reason_code: "controlled_status_fix".to_string(),
+                }],
+                provider_repair: AutonomousCodingProviderRepairPolicy::default(),
+                commit_message: "Make draft PR verifier green".to_string(),
+                timeout_ms: Some(5_000),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: false,
+                github_env: BTreeMap::from([("GH_TOKEN".to_string(), "test-token".to_string())]),
+                gh_binary: Some(gh.binary.clone()),
+                started_unix_ms: 6_500,
+            })
+            .await
+            .expect("issue to merge draft create");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::PrReady);
+        let run = outcome.run.as_ref().expect("run");
+        assert_eq!(run.status.pr_state, "draft_created");
+        assert_eq!(
+            run.status.pr_url.as_deref(),
+            Some("https://github.com/njfio/Tau/pull/3806")
+        );
+        assert_eq!(
+            run.status.pr_publication_reason_code.as_deref(),
+            Some("draft_pr_created")
+        );
+        assert!(run
+            .status
+            .pr_publication_command
+            .as_deref()
+            .is_some_and(|command| command.contains("pr create")));
+        assert!(run.status.pr_publication_stdout_path.is_some());
+
+        let argv = std::fs::read_to_string(&gh.argv_path).expect("captured gh argv");
+        assert!(argv.contains("pr\nlist\n"));
+        assert!(argv.contains("pr\ncreate\n"));
+        assert!(argv.contains("--draft\n"));
+        assert!(!argv.contains("--admin"));
+    }
+
+    #[tokio::test]
+    async fn spec_3806_c06_missing_github_auth_keeps_manual_draft_command() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3806-draft-manual".to_string(),
+                mission_id: "issue-3806-draft-manual-mission".to_string(),
+                session_key: "issue-3806-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3806".to_string(),
+                issue_title: "Manual draft PR fallback".to_string(),
+                issue_body: "Run the authorized loop without GitHub credentials.".to_string(),
+                goal: "Make verifier pass and produce manual draft PR command".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-3806-manual-".to_string(),
+                verifier_commands: vec!["grep -q pass status.txt".to_string()],
+                pr_mode: CodingMissionPrMode::Draft,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: vec![CodingMissionControlledEdit {
+                    relative_path: PathBuf::from("status.txt"),
+                    contents: "pass\n".to_string(),
+                    reason_code: "controlled_status_fix".to_string(),
+                }],
+                provider_repair: AutonomousCodingProviderRepairPolicy::default(),
+                commit_message: "Make manual draft verifier green".to_string(),
+                timeout_ms: Some(5_000),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: false,
+                github_env: BTreeMap::new(),
+                gh_binary: None,
+                started_unix_ms: 6_600,
+            })
+            .await
+            .expect("issue to merge manual draft");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::PrReady);
+        let run = outcome.run.as_ref().expect("run");
+        assert_eq!(run.status.pr_state, "manual_ready");
+        assert_eq!(
+            run.status.pr_publication_reason_code.as_deref(),
+            Some("draft_pr_missing_github_auth")
+        );
+        assert!(run
+            .status
+            .pr_ready_command
+            .as_deref()
+            .is_some_and(|command| command.contains("gh pr create --draft")));
+        assert!(run.status.pr_publication_command.is_none());
     }
 
     #[tokio::test]
@@ -2805,6 +3211,31 @@ mod tests {
                 exit_code
             );
             std::fs::write(&binary, script).expect("fake gh");
+            let mut perms = std::fs::metadata(&binary).expect("metadata").permissions();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&binary, perms).expect("chmod");
+            }
+            FakeGh { binary, argv_path }
+        }
+
+        fn fake_gh_create_or_update(
+            &self,
+            existing_pr_url: Option<&str>,
+            created_pr_url: &str,
+        ) -> FakeGh {
+            let binary = self.root.path().join("fake-gh-create-or-update.sh");
+            let argv_path = self.root.path().join("fake-gh-create-or-update-argv.txt");
+            let existing = existing_pr_url.unwrap_or("");
+            let script = format!(
+                "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$@\" >> '{}'\nif [[ \"${{1:-}} ${{2:-}}\" == \"pr list\" ]]; then\n  printf '{}\\n'\n  exit 0\nfi\nif [[ \"${{1:-}} ${{2:-}}\" == \"pr create\" ]]; then\n  printf '{}\\n'\n  exit 0\nfi\nif [[ \"${{1:-}} ${{2:-}}\" == \"pr edit\" ]]; then\n  exit 0\nfi\necho unexpected gh command >&2\nexit 12\n",
+                shell_single_quote(argv_path.display().to_string().as_str()),
+                existing.replace('\'', "'\"'\"'"),
+                created_pr_url.replace('\'', "'\"'\"'")
+            );
+            std::fs::write(&binary, script).expect("fake gh create or update");
             let mut perms = std::fs::metadata(&binary).expect("metadata").permissions();
             #[cfg(unix)]
             {

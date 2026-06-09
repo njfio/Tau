@@ -337,6 +337,40 @@ JSON
   "event_log_path": "${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/events.jsonl",
   "last_heartbeat_unix_ms": 200,
   "lease_expires_unix_ms": 900200,
+  "pr_publication_reason_code": "draft_pr_created",
+  "pr_publication_command": "gh pr create --draft --head codex/status-job",
+  "pr_publication_stdout_path": "${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/gh-pr-create.stdout",
+  "pr_publication_stderr_path": "${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/gh-pr-create.stderr",
+  "pr_publication_exit_status": 0,
+  "metadata": {}
+}
+JSON
+  cat >"${test_autonomous_coding_state_dir}/autonomous-coding-jobs/stale-job.status.json" <<JSON
+{
+  "schema_version": 1,
+  "job_id": "stale-job",
+  "mission_id": "stale-mission",
+  "status": "running",
+  "phase": "executing",
+  "reason_code": "autonomous_coding_job_running",
+  "repo_path": "${tmp_dir}/fixture-repo",
+  "verifier_summary": "failed:coding_verifier_red",
+  "changed_files": [],
+  "resume_command": "mission resume stale-mission",
+  "operator_state": "stale_lease",
+  "operator_next_command": "tau-autonomous-coding-job recover --state-dir ${test_autonomous_coding_state_dir}",
+  "replay_safe": true,
+  "recoverable": true,
+  "needs_authority": false,
+  "stale_lease": true,
+  "mark_blocked_command": "tau-autonomous-coding-job mark-blocked --state-dir ${test_autonomous_coding_state_dir} --job-id stale-job --reason-code operator_marked_blocked",
+  "pr_state": "none",
+  "recovery_count": 0,
+  "replay_count": 0,
+  "event_log_path": "${test_autonomous_coding_state_dir}/autonomous-coding-jobs/stale-job/events.jsonl",
+  "last_heartbeat_unix_ms": 100,
+  "lease_expires_unix_ms": 1,
+  "last_error": "simulated stale lease",
   "metadata": {}
 }
 JSON
@@ -438,6 +472,62 @@ JSON
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.recovery_count=1" "status autonomous coding recovery"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.replay_count=2" "status autonomous coding replay"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=provider_repair_durable_jobs_visible_crash_resume_recovery_in_progress" "status autonomy boundary"
+
+  local jobs_output
+  jobs_output="$("${LAUNCHER_SCRIPT}" jobs --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" 2>&1)"
+  assert_contains "${jobs_output}" "tau-unified: autonomous_coding.jobs.count=2" "jobs list count"
+  assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job=stale-job status=running operator_state=stale_lease replay_safe=true recoverable=true" "jobs stale summary"
+  assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job.stale-job.resume_explanation=recoverable stale lease; run tau-autonomous-coding-job recover --state-dir ${test_autonomous_coding_state_dir}" "jobs stale explanation"
+  assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job=status-job status=pr_ready operator_state=complete" "jobs complete summary"
+
+  local job_output
+  job_output="$("${LAUNCHER_SCRIPT}" job status-job --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" 2>&1)"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.id=status-job" "job inspect id"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.verifier=succeeded:coding_verifier_green" "job inspect verifier"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.pr_publication_reason_code=draft_pr_created" "job inspect pr publication reason"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.pr_publication_command=gh pr create --draft --head codex/status-job" "job inspect pr publication command"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.resume_explanation=complete; no replay or recovery needed" "job inspect complete explanation"
+
+  local fake_cli="${tmp_dir}/fake-autonomous-coding-job.sh"
+  local fake_cli_args="${tmp_dir}/fake-autonomous-coding-job.args"
+  cat >"${fake_cli}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" >"${TAU_FAKE_AUTONOMOUS_CODING_JOB_ARGS}"
+printf '{"fake_cli":true,"command":"%s"}\n' "${1:-none}"
+EOF
+  chmod +x "${fake_cli}"
+
+  local recover_output
+  recover_output="$(
+    TAU_UNIFIED_AUTONOMOUS_CODING_JOB_CLI="${fake_cli}" \
+    TAU_FAKE_AUTONOMOUS_CODING_JOB_ARGS="${fake_cli_args}" \
+    "${LAUNCHER_SCRIPT}" recover --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" --jobs-state-dir "${test_jobs_state_dir}" 2>&1
+  )"
+  assert_contains "${recover_output}" "tau-unified: autonomous_coding.recover.state_dir=${test_autonomous_coding_state_dir}" "recover marker"
+  assert_contains "${recover_output}" '"command":"recover"' "recover json"
+  assert_contains "$(cat "${fake_cli_args}")" "recover" "recover delegates command"
+  assert_contains "$(cat "${fake_cli_args}")" "--jobs-state-dir" "recover delegates jobs state"
+
+  local replay_output
+  replay_output="$(
+    TAU_UNIFIED_AUTONOMOUS_CODING_JOB_CLI="${fake_cli}" \
+    TAU_FAKE_AUTONOMOUS_CODING_JOB_ARGS="${fake_cli_args}" \
+    "${LAUNCHER_SCRIPT}" replay stale-job --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" --jobs-state-dir "${test_jobs_state_dir}" 2>&1
+  )"
+  assert_contains "${replay_output}" "tau-unified: autonomous_coding.replay.job_id=stale-job" "replay marker"
+  assert_contains "${replay_output}" '"command":"replay"' "replay json"
+  assert_contains "$(cat "${fake_cli_args}")" "stale-job" "replay delegates job id"
+
+  local block_output
+  block_output="$(
+    TAU_UNIFIED_AUTONOMOUS_CODING_JOB_CLI="${fake_cli}" \
+    TAU_FAKE_AUTONOMOUS_CODING_JOB_ARGS="${fake_cli_args}" \
+    "${LAUNCHER_SCRIPT}" block stale-job --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" --jobs-state-dir "${test_jobs_state_dir}" --reason-code inspected_block --detail "inspected and blocked" 2>&1
+  )"
+  assert_contains "${block_output}" "tau-unified: autonomous_coding.block.job_id=stale-job" "block marker"
+  assert_contains "${block_output}" '"command":"mark-blocked"' "block json"
+  assert_contains "$(cat "${fake_cli_args}")" "inspected_block" "block delegates reason"
 
   TAU_UNIFIED_RUNNER="${runner}" \
   TAU_UNIFIED_RUNNER_LOG="${test_runner_log}" \

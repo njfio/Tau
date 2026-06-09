@@ -31,6 +31,7 @@ RUST_MIN_STACK_DEFAULT="${TAU_UNIFIED_RUST_MIN_STACK:-${RUST_MIN_STACK:-16777216
 RUNNER="${TAU_UNIFIED_RUNNER:-}"
 RUNNER_LOG="${TAU_UNIFIED_RUNNER_LOG:-}"
 RUNNER_PID="${TAU_UNIFIED_RUNNER_PID:-}"
+AUTONOMOUS_CODING_JOB_CLI="${TAU_UNIFIED_AUTONOMOUS_CODING_JOB_CLI:-}"
 
 usage() {
   cat <<'EOF'
@@ -39,6 +40,11 @@ Usage: scripts/run/tau-unified.sh <command> [options]
 Commands:
   up       Start unified runtime (gateway/dashboard) in background.
   status   Show runtime process status and key artifact paths.
+  jobs     List durable autonomous coding jobs and recovery decisions.
+  job      Inspect one autonomous coding job and its evidence.
+  recover  Recover stuck autonomous coding/background jobs.
+  replay   Replay one autonomous coding job checkpoint.
+  block    Mark one autonomous coding job blocked after operator inspection.
   down     Stop unified runtime and clear pid file.
   tui      Launch live TUI shell view using dashboard artifacts.
 
@@ -83,6 +89,9 @@ Options for `tui`:
   --no-color                      Disable TUI color output
 
 General:
+  --autonomous-coding-state-dir <path>
+                                  Autonomous coding state dir for job commands
+  --jobs-state-dir <path>         Background jobs state dir for recovery command
   --help                          Show usage
 EOF
 }
@@ -96,6 +105,17 @@ die() {
   local message="$1"
   echo "${message}" >&2
   exit 2
+}
+
+run_autonomous_coding_job_cli() {
+  if [[ -n "${AUTONOMOUS_CODING_JOB_CLI}" ]]; then
+    "${AUTONOMOUS_CODING_JOB_CLI}" "$@"
+    return $?
+  fi
+  (
+    cd "${REPO_ROOT}"
+    cargo run -q -p tau-coding-agent --bin tau_autonomous_coding_job -- "$@"
+  )
 }
 
 require_positive_integer() {
@@ -337,6 +357,8 @@ write_default_autonomous_coding_snapshot_fields() {
   printf 'autonomous_coding_mark_blocked_command=none\n'
   printf 'autonomous_coding_pr_state=none\n'
   printf 'autonomous_coding_pr_url=none\n'
+  printf 'autonomous_coding_pr_publication_reason_code=none\n'
+  printf 'autonomous_coding_pr_publication_command=none\n'
   printf 'autonomous_coding_auto_merge_status=none\n'
   printf 'autonomous_coding_auto_merge_reason_code=none\n'
   printf 'autonomous_coding_auto_merge_pr_url=none\n'
@@ -428,6 +450,8 @@ fields = {
     "autonomous_coding_mark_blocked_command": state.get("mark_blocked_command"),
     "autonomous_coding_pr_state": state.get("pr_state"),
     "autonomous_coding_pr_url": state.get("pr_url"),
+    "autonomous_coding_pr_publication_reason_code": state.get("pr_publication_reason_code"),
+    "autonomous_coding_pr_publication_command": state.get("pr_publication_command"),
     "autonomous_coding_auto_merge_status": state.get("auto_merge_status"),
     "autonomous_coding_auto_merge_reason_code": state.get("auto_merge_reason_code"),
     "autonomous_coding_auto_merge_pr_url": state.get("auto_merge_pr_url"),
@@ -544,6 +568,8 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.autonomous_coding.mark_blocked_command=$(control_plane_snapshot_value autonomous_coding_mark_blocked_command none)"
   log "tau-unified: control_plane.autonomous_coding.pr_state=$(control_plane_snapshot_value autonomous_coding_pr_state none)"
   log "tau-unified: control_plane.autonomous_coding.pr_url=$(control_plane_snapshot_value autonomous_coding_pr_url none)"
+  log "tau-unified: control_plane.autonomous_coding.pr_publication.reason_code=$(control_plane_snapshot_value autonomous_coding_pr_publication_reason_code none)"
+  log "tau-unified: control_plane.autonomous_coding.pr_publication.command=$(control_plane_snapshot_value autonomous_coding_pr_publication_command none)"
   log "tau-unified: control_plane.autonomous_coding.auto_merge.status=$(control_plane_snapshot_value autonomous_coding_auto_merge_status none)"
   log "tau-unified: control_plane.autonomous_coding.auto_merge.reason_code=$(control_plane_snapshot_value autonomous_coding_auto_merge_reason_code none)"
   log "tau-unified: control_plane.autonomous_coding.auto_merge.pr_url=$(control_plane_snapshot_value autonomous_coding_auto_merge_pr_url none)"
@@ -869,6 +895,296 @@ cmd_status() {
   log_control_plane_snapshot
 }
 
+job_resume_explanation_py='
+def resume_explanation(state):
+    operator_state = clean(state.get("operator_state"), "unknown")
+    next_command = clean(state.get("operator_next_command"), "none")
+    if state.get("stale_lease"):
+        return f"recoverable stale lease; run {next_command}"
+    if state.get("recoverable"):
+        return f"recoverable job; run {next_command}"
+    if state.get("replay_safe"):
+        return f"safe to replay from checkpoint; run {next_command}"
+    if state.get("needs_authority"):
+        return "blocked on missing verifier/edit/provider authority"
+    if operator_state == "complete":
+        return "complete; no replay or recovery needed"
+    if operator_state == "blocked":
+        return "blocked; inspect event log and mark-blocked detail before replay"
+    return "unsafe to resume automatically; no safe replay/recover signal present"
+'
+
+cmd_jobs() {
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir|--autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown jobs option: $1"
+        ;;
+    esac
+  done
+
+  python3 - "${autonomous_coding_state_dir}" "${job_resume_explanation_py}" <<'PY'
+import glob
+import json
+import os
+import sys
+
+state_dir = sys.argv[1]
+resume_code = sys.argv[2]
+jobs_dir = os.path.join(state_dir, "autonomous-coding-jobs")
+
+def clean(value, default="none"):
+    if value is None:
+        value = default
+    if isinstance(value, bool):
+        value = str(value).lower()
+    if isinstance(value, (list, tuple)):
+        value = ",".join(clean(item, "") for item in value if clean(item, ""))
+    value = str(value).replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
+    return value if value else default
+
+exec(resume_code)
+
+states = []
+for path in glob.glob(os.path.join(jobs_dir, "*.status.json")):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        continue
+    if payload.get("job_id"):
+        states.append(payload)
+
+states.sort(key=lambda item: clean(item.get("job_id"), ""))
+print(f"tau-unified: autonomous_coding.jobs.state_dir={clean(state_dir)}")
+print(f"tau-unified: autonomous_coding.jobs.count={len(states)}")
+for state in states:
+    job_id = clean(state.get("job_id"))
+    print(
+        "tau-unified: autonomous_coding.job="
+        f"{job_id} status={clean(state.get('status'))} "
+        f"operator_state={clean(state.get('operator_state'))} "
+        f"replay_safe={clean(state.get('replay_safe', False))} "
+        f"recoverable={clean(state.get('recoverable', False))} "
+        f"needs_authority={clean(state.get('needs_authority', False))} "
+        f"pr_state={clean(state.get('pr_state'))} "
+        f"reason_code={clean(state.get('reason_code'))}"
+    )
+    print(f"tau-unified: autonomous_coding.job.{job_id}.next_command={clean(state.get('operator_next_command'))}")
+    print(f"tau-unified: autonomous_coding.job.{job_id}.resume_explanation={resume_explanation(state)}")
+PY
+}
+
+cmd_job() {
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
+  local job_id=""
+  if [[ $# -gt 0 && "$1" != --* ]]; then
+    job_id="$1"
+    shift
+  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir|--autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
+      --job-id)
+        job_id="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown job option: $1"
+        ;;
+    esac
+  done
+  [[ -n "${job_id}" ]] || die "job requires <job-id> or --job-id"
+
+  python3 - "${autonomous_coding_state_dir}" "${job_id}" "${job_resume_explanation_py}" <<'PY'
+import json
+import os
+import sys
+
+state_dir, job_id, resume_code = sys.argv[1:]
+path = os.path.join(state_dir, "autonomous-coding-jobs", f"{job_id}.status.json")
+
+def clean(value, default="none"):
+    if value is None:
+        value = default
+    if isinstance(value, bool):
+        value = str(value).lower()
+    if isinstance(value, (list, tuple)):
+        value = ",".join(clean(item, "") for item in value if clean(item, ""))
+    value = str(value).replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
+    return value if value else default
+
+exec(resume_code)
+
+if not os.path.exists(path):
+    print(f"tau-unified: autonomous_coding.job.error=not_found job_id={clean(job_id)}")
+    sys.exit(2)
+with open(path, "r", encoding="utf-8") as handle:
+    state = json.load(handle)
+
+fields = {
+    "id": state.get("job_id"),
+    "mission_id": state.get("mission_id"),
+    "status": state.get("status"),
+    "phase": state.get("phase"),
+    "reason_code": state.get("reason_code"),
+    "repo": state.get("repo_path"),
+    "issue_url": state.get("issue_url"),
+    "verifier": state.get("verifier_summary"),
+    "changed_files": state.get("changed_files") or [],
+    "operator_state": state.get("operator_state"),
+    "operator_next_command": state.get("operator_next_command"),
+    "replay_safe": state.get("replay_safe", False),
+    "recoverable": state.get("recoverable", False),
+    "needs_authority": state.get("needs_authority", False),
+    "stale_lease": state.get("stale_lease", False),
+    "mark_blocked_command": state.get("mark_blocked_command"),
+    "pr_state": state.get("pr_state"),
+    "pr_url": state.get("pr_url"),
+    "pr_ready_command": state.get("pr_ready_command"),
+    "pr_publication_reason_code": state.get("pr_publication_reason_code"),
+    "pr_publication_command": state.get("pr_publication_command"),
+    "provider_repair_status": state.get("provider_repair_status"),
+    "provider_repair_reason_code": state.get("provider_repair_reason_code"),
+    "provider_repair_context_path": state.get("provider_repair_context_path"),
+    "event_log": state.get("event_log_path"),
+    "last_error": state.get("last_error"),
+    "resume_explanation": resume_explanation(state),
+}
+for key, value in fields.items():
+    print(f"tau-unified: autonomous_coding.job.{key}={clean(value)}")
+PY
+}
+
+cmd_recover_jobs() {
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
+  local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir|--autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
+      --jobs-state-dir)
+        jobs_state_dir="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown recover option: $1"
+        ;;
+    esac
+  done
+  log "tau-unified: autonomous_coding.recover.state_dir=${autonomous_coding_state_dir}"
+  run_autonomous_coding_job_cli recover --state-dir "${autonomous_coding_state_dir}" --jobs-state-dir "${jobs_state_dir}"
+}
+
+cmd_replay_job() {
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
+  local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
+  local job_id=""
+  if [[ $# -gt 0 && "$1" != --* ]]; then
+    job_id="$1"
+    shift
+  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir|--autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
+      --jobs-state-dir)
+        jobs_state_dir="$2"
+        shift 2
+        ;;
+      --job-id)
+        job_id="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown replay option: $1"
+        ;;
+    esac
+  done
+  [[ -n "${job_id}" ]] || die "replay requires <job-id> or --job-id"
+  log "tau-unified: autonomous_coding.replay.job_id=${job_id}"
+  run_autonomous_coding_job_cli replay --state-dir "${autonomous_coding_state_dir}" --jobs-state-dir "${jobs_state_dir}" --job-id "${job_id}"
+}
+
+cmd_block_job() {
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
+  local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
+  local reason_code="operator_marked_blocked"
+  local detail="operator inspected job and marked it blocked"
+  local job_id=""
+  if [[ $# -gt 0 && "$1" != --* ]]; then
+    job_id="$1"
+    shift
+  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir|--autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
+      --jobs-state-dir)
+        jobs_state_dir="$2"
+        shift 2
+        ;;
+      --job-id)
+        job_id="$2"
+        shift 2
+        ;;
+      --reason-code)
+        reason_code="$2"
+        shift 2
+        ;;
+      --detail)
+        detail="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown block option: $1"
+        ;;
+    esac
+  done
+  [[ -n "${job_id}" ]] || die "block requires <job-id> or --job-id"
+  log "tau-unified: autonomous_coding.block.job_id=${job_id}"
+  run_autonomous_coding_job_cli mark-blocked \
+    --state-dir "${autonomous_coding_state_dir}" \
+    --jobs-state-dir "${jobs_state_dir}" \
+    --job-id "${job_id}" \
+    --reason-code "${reason_code}" \
+    --detail "${detail}"
+}
+
 cmd_down() {
   cleanup_stale_pid
   if [[ ! -f "${PID_FILE}" ]]; then
@@ -1189,6 +1505,21 @@ case "${command}" in
     ;;
   status)
     cmd_status "$@"
+    ;;
+  jobs)
+    cmd_jobs "$@"
+    ;;
+  job)
+    cmd_job "$@"
+    ;;
+  recover)
+    cmd_recover_jobs "$@"
+    ;;
+  replay)
+    cmd_replay_job "$@"
+    ;;
+  block)
+    cmd_block_job "$@"
     ;;
   down)
     cmd_down "$@"

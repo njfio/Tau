@@ -294,7 +294,16 @@ fn provider_env_or_dotenv_var(name: &str) -> Option<String> {
             return Some(value);
         }
     }
+    if provider_dotenv_keys_disabled() {
+        return None;
+    }
     nearest_dotenv_var(name)
+}
+
+fn provider_dotenv_keys_disabled() -> bool {
+    std::env::var("TAU_PROVIDER_DISABLE_DOTENV_KEYS")
+        .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }
 
 fn nearest_dotenv_var(name: &str) -> Option<String> {
@@ -673,6 +682,36 @@ mod tests {
             candidate_value(&candidates, "OPENROUTER_API_KEY").as_deref(),
             Some("env-openrouter-key")
         );
+    }
+
+    #[test]
+    fn unit_provider_api_key_candidates_can_disable_dotenv_fallback() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join(".git")).expect("create fake git dir");
+        fs::write(
+            temp.path().join(".env"),
+            "OPENROUTER_API_KEY=file-openrouter-key\n",
+        )
+        .expect("write dotenv");
+        let prior_dir = std::env::current_dir().expect("current dir");
+        let prior = clear_env_vars(&[
+            "OPENROUTER_API_KEY",
+            "TAU_OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "TAU_API_KEY",
+            "TAU_PROVIDER_DISABLE_DOTENV_KEYS",
+        ]);
+
+        std::env::set_var("TAU_PROVIDER_DISABLE_DOTENV_KEYS", "1");
+        std::env::set_current_dir(temp.path()).expect("set current dir");
+        let candidates =
+            provider_api_key_candidates_with_inputs(Provider::OpenRouter, None, None, None, None);
+
+        std::env::set_current_dir(prior_dir).expect("restore current dir");
+        restore_env_vars(prior);
+
+        assert!(candidate_value(&candidates, "OPENROUTER_API_KEY").is_none());
     }
 
     #[test]

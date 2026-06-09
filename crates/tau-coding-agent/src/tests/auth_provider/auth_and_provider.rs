@@ -3012,6 +3012,9 @@ printf "codex fallback response" > "$out"
     cli.credential_store_encryption = CliCredentialStoreEncryptionMode::None;
     cli.openai_codex_backend = true;
     cli.openai_codex_cli = script.display().to_string();
+    cli.provider_subscription_strict = true;
+    cli.api_key = None;
+    cli.openai_api_key = None;
 
     let snapshot = snapshot_env_vars(&[
         "TAU_AUTH_ACCESS_TOKEN",
@@ -3025,6 +3028,7 @@ printf "codex fallback response" > "$out"
         "MISTRAL_API_KEY",
         "AZURE_OPENAI_API_KEY",
         "TAU_API_KEY",
+        "TAU_PROVIDER_DISABLE_DOTENV_KEYS",
     ]);
     std::env::remove_var("TAU_AUTH_ACCESS_TOKEN");
     std::env::remove_var("TAU_AUTH_EXPIRES_UNIX");
@@ -3037,6 +3041,7 @@ printf "codex fallback response" > "$out"
     std::env::remove_var("MISTRAL_API_KEY");
     std::env::remove_var("AZURE_OPENAI_API_KEY");
     std::env::remove_var("TAU_API_KEY");
+    std::env::set_var("TAU_PROVIDER_DISABLE_DOTENV_KEYS", "1");
 
     let client = build_provider_client(&cli, Provider::OpenAi).expect("build codex backend client");
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
@@ -3086,6 +3091,7 @@ fn regression_build_provider_client_does_not_bypass_revoked_store_with_env_token
         "MISTRAL_API_KEY",
         "AZURE_OPENAI_API_KEY",
         "TAU_API_KEY",
+        "TAU_PROVIDER_DISABLE_DOTENV_KEYS",
     ]);
     std::env::remove_var("TAU_AUTH_ACCESS_TOKEN");
     std::env::remove_var("TAU_AUTH_EXPIRES_UNIX");
@@ -3101,6 +3107,7 @@ fn regression_build_provider_client_does_not_bypass_revoked_store_with_env_token
     std::env::remove_var("MISTRAL_API_KEY");
     std::env::remove_var("AZURE_OPENAI_API_KEY");
     std::env::remove_var("TAU_API_KEY");
+    std::env::set_var("TAU_PROVIDER_DISABLE_DOTENV_KEYS", "1");
 
     let error = match build_provider_client(&cli, Provider::OpenAi) {
         Ok(_) => panic!("revoked store should remain fail-closed"),
