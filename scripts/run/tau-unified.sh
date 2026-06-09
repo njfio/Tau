@@ -21,6 +21,7 @@ PROFILE_DEFAULT="${TAU_UNIFIED_PROFILE:-local-dev}"
 GATEWAY_STATE_DIR_DEFAULT="${TAU_UNIFIED_GATEWAY_STATE_DIR:-.tau/gateway}"
 DASHBOARD_STATE_DIR_DEFAULT="${TAU_UNIFIED_DASHBOARD_STATE_DIR:-.tau/dashboard}"
 JOBS_STATE_DIR_DEFAULT="${TAU_UNIFIED_JOBS_STATE_DIR:-.tau/jobs}"
+AUTONOMOUS_CODING_STATE_DIR_DEFAULT="${TAU_UNIFIED_AUTONOMOUS_CODING_STATE_DIR:-.tau/autonomous-coding}"
 REQUEST_TIMEOUT_MS_DEFAULT="${TAU_UNIFIED_REQUEST_TIMEOUT_MS:-180000}"
 AGENT_REQUEST_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_AGENT_REQUEST_MAX_RETRIES:-0}"
 PROVIDER_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_PROVIDER_MAX_RETRIES:-0}"
@@ -51,6 +52,8 @@ Options for `up`:
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
   --jobs-state-dir <path>         Background jobs state dir (default: .tau/jobs)
+  --autonomous-coding-state-dir <path>
+                                  Autonomous coding jobs state dir (default: .tau/autonomous-coding)
   --request-timeout-ms <n>        Runtime request timeout ms (default: 180000)
   --agent-request-max-retries <n> Runtime agent request retries (default: 0)
   --provider-max-retries <n>      Runtime provider retries (default: 0)
@@ -65,6 +68,8 @@ Options for `tui`:
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
   --jobs-state-dir <path>         Background jobs state dir (default: .tau/jobs)
+  --autonomous-coding-state-dir <path>
+                                  Autonomous coding jobs state dir (default: .tau/autonomous-coding)
   --model <id>                    Agent model id (default: gpt-5.3-codex)
   --request-timeout-ms <n>        Agent request timeout ms (default: 180000)
   --agent-request-max-retries <n> Agent max request retries (default: 0)
@@ -147,6 +152,7 @@ write_control_plane_snapshot() {
   local gateway_state_dir="$3"
   local dashboard_state_dir="$4"
   local jobs_state_dir="$5"
+  local autonomous_coding_state_dir="$6"
 
   {
     printf 'profile=%s\n' "${profile}"
@@ -165,6 +171,7 @@ write_control_plane_snapshot() {
     printf 'gateway_state_dir=%s\n' "${gateway_state_dir}"
     printf 'dashboard_state_dir=%s\n' "${dashboard_state_dir}"
     printf 'jobs_state_dir=%s\n' "${jobs_state_dir}"
+    printf 'autonomous_coding_state_dir=%s\n' "${autonomous_coding_state_dir}"
     printf 'deploy_state_file=%s/deploy-agent-state.json\n' "${gateway_state_dir}"
     printf 'jobs_state=available_via_gateway_jobs_endpoint\n'
     printf 'background_jobs_state_dir=%s\n' "${jobs_state_dir}"
@@ -176,7 +183,8 @@ write_control_plane_snapshot() {
     printf 'routines_state=visible_via_webchat_routines_panel\n'
     printf 'coding_missions_endpoint=http://%s/gateway/missions\n' "${bind}"
     write_coding_mission_snapshot_fields "${gateway_state_dir}"
-    printf 'autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed\n'
+    write_autonomous_coding_snapshot_fields "${autonomous_coding_state_dir}"
+    printf 'autonomy_boundary=provider_repair_durable_jobs_visible_crash_resume_recovery_in_progress\n'
   } >"${CONTROL_SNAPSHOT_FILE}"
 }
 
@@ -307,6 +315,133 @@ PY
   printf '%s\n' "${snapshot}"
 }
 
+write_default_autonomous_coding_snapshot_fields() {
+  local autonomous_coding_state_dir="$1"
+  printf 'autonomous_coding_state_dir=%s\n' "${autonomous_coding_state_dir}"
+  printf 'autonomous_coding_jobs_dir=%s/autonomous-coding-jobs\n' "${autonomous_coding_state_dir}"
+  printf 'autonomous_coding_job_id=none\n'
+  printf 'autonomous_coding_mission_id=none\n'
+  printf 'autonomous_coding_status=none\n'
+  printf 'autonomous_coding_phase=none\n'
+  printf 'autonomous_coding_reason_code=none\n'
+  printf 'autonomous_coding_repo=unknown\n'
+  printf 'autonomous_coding_verifier=none\n'
+  printf 'autonomous_coding_changed_files=none\n'
+  printf 'autonomous_coding_resume_command=none\n'
+  printf 'autonomous_coding_pr_state=none\n'
+  printf 'autonomous_coding_pr_url=none\n'
+  printf 'autonomous_coding_auto_merge_status=none\n'
+  printf 'autonomous_coding_auto_merge_reason_code=none\n'
+  printf 'autonomous_coding_auto_merge_pr_url=none\n'
+  printf 'autonomous_coding_provider_repair_status=none\n'
+  printf 'autonomous_coding_provider_repair_reason_code=none\n'
+  printf 'autonomous_coding_provider_repair_attempts=0\n'
+  printf 'autonomous_coding_provider_repair_max_attempts=0\n'
+  printf 'autonomous_coding_provider_repair_provider=none\n'
+  printf 'autonomous_coding_provider_repair_model=none\n'
+  printf 'autonomous_coding_provider_repair_context_path=none\n'
+  printf 'autonomous_coding_event_log_path=none\n'
+  printf 'autonomous_coding_last_heartbeat_unix_ms=none\n'
+  printf 'autonomous_coding_lease_expires_unix_ms=none\n'
+  printf 'autonomous_coding_recovery_count=0\n'
+  printf 'autonomous_coding_replay_count=0\n'
+  printf 'autonomous_coding_last_error=none\n'
+}
+
+write_autonomous_coding_snapshot_fields() {
+  local autonomous_coding_state_dir="$1"
+  local jobs_dir="${autonomous_coding_state_dir}/autonomous-coding-jobs"
+  if [[ ! -d "${jobs_dir}" ]] || ! command -v python3 >/dev/null 2>&1; then
+    write_default_autonomous_coding_snapshot_fields "${autonomous_coding_state_dir}"
+    return 0
+  fi
+
+  local snapshot
+  snapshot="$(python3 - "${autonomous_coding_state_dir}" "${jobs_dir}" <<'PY' 2>/dev/null || true
+import glob
+import json
+import os
+import sys
+
+state_dir = sys.argv[1]
+jobs_dir = sys.argv[2]
+
+def clean(value, default="none"):
+    if value is None:
+        value = default
+    if isinstance(value, (list, tuple)):
+        value = ",".join(clean(item, "") for item in value if clean(item, ""))
+    value = str(value).replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
+    return value if value else default
+
+states = []
+for path in glob.glob(os.path.join(jobs_dir, "*.status.json")):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        continue
+    if payload.get("job_id"):
+        payload["_path"] = path
+        payload["_mtime"] = os.path.getmtime(path)
+        states.append(payload)
+
+if not states:
+    sys.exit(0)
+
+state = max(
+    states,
+    key=lambda item: (
+        int(item.get("last_heartbeat_unix_ms") or 0),
+        int(item.get("lease_expires_unix_ms") or 0),
+        item.get("_mtime") or 0,
+    ),
+)
+
+fields = {
+    "autonomous_coding_state_dir": state_dir,
+    "autonomous_coding_jobs_dir": jobs_dir,
+    "autonomous_coding_job_id": state.get("job_id"),
+    "autonomous_coding_mission_id": state.get("mission_id"),
+    "autonomous_coding_status": state.get("status"),
+    "autonomous_coding_phase": state.get("phase"),
+    "autonomous_coding_reason_code": state.get("reason_code"),
+    "autonomous_coding_repo": state.get("repo_path"),
+    "autonomous_coding_verifier": state.get("verifier_summary"),
+    "autonomous_coding_changed_files": state.get("changed_files") or [],
+    "autonomous_coding_resume_command": state.get("resume_command"),
+    "autonomous_coding_pr_state": state.get("pr_state"),
+    "autonomous_coding_pr_url": state.get("pr_url"),
+    "autonomous_coding_auto_merge_status": state.get("auto_merge_status"),
+    "autonomous_coding_auto_merge_reason_code": state.get("auto_merge_reason_code"),
+    "autonomous_coding_auto_merge_pr_url": state.get("auto_merge_pr_url"),
+    "autonomous_coding_provider_repair_status": state.get("provider_repair_status"),
+    "autonomous_coding_provider_repair_reason_code": state.get("provider_repair_reason_code"),
+    "autonomous_coding_provider_repair_attempts": state.get("provider_repair_attempts", 0),
+    "autonomous_coding_provider_repair_max_attempts": state.get("provider_repair_max_attempts", 0),
+    "autonomous_coding_provider_repair_provider": state.get("provider_repair_provider"),
+    "autonomous_coding_provider_repair_model": state.get("provider_repair_model"),
+    "autonomous_coding_provider_repair_context_path": state.get("provider_repair_context_path"),
+    "autonomous_coding_event_log_path": state.get("event_log_path"),
+    "autonomous_coding_last_heartbeat_unix_ms": state.get("last_heartbeat_unix_ms"),
+    "autonomous_coding_lease_expires_unix_ms": state.get("lease_expires_unix_ms"),
+    "autonomous_coding_recovery_count": state.get("recovery_count", 0),
+    "autonomous_coding_replay_count": state.get("replay_count", 0),
+    "autonomous_coding_last_error": state.get("last_error"),
+}
+
+for key, value in fields.items():
+    print(f"{key}={clean(value)}")
+PY
+)"
+
+  if [[ -z "${snapshot}" ]]; then
+    write_default_autonomous_coding_snapshot_fields "${autonomous_coding_state_dir}"
+    return 0
+  fi
+  printf '%s\n' "${snapshot}"
+}
+
 log_control_plane_snapshot() {
   log "tau-unified: control_plane.health=running"
   log "tau-unified: control_plane.runtime_state_dir=${RUNTIME_DIR}"
@@ -327,7 +462,12 @@ log_control_plane_snapshot() {
     log "tau-unified: control_plane.coding_mission.resume_command=none"
     log "tau-unified: control_plane.coding_mission.pr_state=none"
     log "tau-unified: control_plane.coding_mission.pr_url=none"
-    log "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed"
+    log "tau-unified: control_plane.autonomous_coding.job_id=none"
+    log "tau-unified: control_plane.autonomous_coding.status=none"
+    log "tau-unified: control_plane.autonomous_coding.verifier=none"
+    log "tau-unified: control_plane.autonomous_coding.provider_repair.status=none"
+    log "tau-unified: control_plane.autonomous_coding.event_log=none"
+    log "tau-unified: control_plane.autonomy_boundary=provider_repair_durable_jobs_visible_crash_resume_recovery_in_progress"
     return 0
   fi
 
@@ -355,6 +495,8 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.gateway_state_dir=$(control_plane_snapshot_value gateway_state_dir unknown)"
   log "tau-unified: control_plane.dashboard_state_dir=$(control_plane_snapshot_value dashboard_state_dir unknown)"
   log "tau-unified: control_plane.jobs_state_dir=$(control_plane_snapshot_value jobs_state_dir unknown)"
+  log "tau-unified: control_plane.autonomous_coding.state_dir=$(control_plane_snapshot_value autonomous_coding_state_dir unknown)"
+  log "tau-unified: control_plane.autonomous_coding.jobs_dir=$(control_plane_snapshot_value autonomous_coding_jobs_dir unknown)"
   log "tau-unified: control_plane.deploy_state_file=$(control_plane_snapshot_value deploy_state_file unknown)"
   log "tau-unified: control_plane.coding_missions_endpoint=$(control_plane_snapshot_value coding_missions_endpoint unknown)"
   log "tau-unified: control_plane.coding_mission.state_dir=$(control_plane_snapshot_value coding_mission_state_dir unknown)"
@@ -368,7 +510,34 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.coding_mission.resume_command=$(control_plane_snapshot_value coding_mission_resume_command none)"
   log "tau-unified: control_plane.coding_mission.pr_state=$(control_plane_snapshot_value coding_mission_pr_state none)"
   log "tau-unified: control_plane.coding_mission.pr_url=$(control_plane_snapshot_value coding_mission_pr_url none)"
-  log "tau-unified: control_plane.autonomy_boundary=$(control_plane_snapshot_value autonomy_boundary durable_jobs_replay_crash_resume_not_claimed)"
+  log "tau-unified: control_plane.autonomous_coding.job_id=$(control_plane_snapshot_value autonomous_coding_job_id none)"
+  log "tau-unified: control_plane.autonomous_coding.mission_id=$(control_plane_snapshot_value autonomous_coding_mission_id none)"
+  log "tau-unified: control_plane.autonomous_coding.status=$(control_plane_snapshot_value autonomous_coding_status none)"
+  log "tau-unified: control_plane.autonomous_coding.phase=$(control_plane_snapshot_value autonomous_coding_phase none)"
+  log "tau-unified: control_plane.autonomous_coding.reason_code=$(control_plane_snapshot_value autonomous_coding_reason_code none)"
+  log "tau-unified: control_plane.autonomous_coding.repo=$(control_plane_snapshot_value autonomous_coding_repo unknown)"
+  log "tau-unified: control_plane.autonomous_coding.verifier=$(control_plane_snapshot_value autonomous_coding_verifier none)"
+  log "tau-unified: control_plane.autonomous_coding.changed_files=$(control_plane_snapshot_value autonomous_coding_changed_files none)"
+  log "tau-unified: control_plane.autonomous_coding.resume_command=$(control_plane_snapshot_value autonomous_coding_resume_command none)"
+  log "tau-unified: control_plane.autonomous_coding.pr_state=$(control_plane_snapshot_value autonomous_coding_pr_state none)"
+  log "tau-unified: control_plane.autonomous_coding.pr_url=$(control_plane_snapshot_value autonomous_coding_pr_url none)"
+  log "tau-unified: control_plane.autonomous_coding.auto_merge.status=$(control_plane_snapshot_value autonomous_coding_auto_merge_status none)"
+  log "tau-unified: control_plane.autonomous_coding.auto_merge.reason_code=$(control_plane_snapshot_value autonomous_coding_auto_merge_reason_code none)"
+  log "tau-unified: control_plane.autonomous_coding.auto_merge.pr_url=$(control_plane_snapshot_value autonomous_coding_auto_merge_pr_url none)"
+  log "tau-unified: control_plane.autonomous_coding.provider_repair.status=$(control_plane_snapshot_value autonomous_coding_provider_repair_status none)"
+  log "tau-unified: control_plane.autonomous_coding.provider_repair.reason_code=$(control_plane_snapshot_value autonomous_coding_provider_repair_reason_code none)"
+  log "tau-unified: control_plane.autonomous_coding.provider_repair.attempts=$(control_plane_snapshot_value autonomous_coding_provider_repair_attempts 0)"
+  log "tau-unified: control_plane.autonomous_coding.provider_repair.max_attempts=$(control_plane_snapshot_value autonomous_coding_provider_repair_max_attempts 0)"
+  log "tau-unified: control_plane.autonomous_coding.provider_repair.provider=$(control_plane_snapshot_value autonomous_coding_provider_repair_provider none)"
+  log "tau-unified: control_plane.autonomous_coding.provider_repair.model=$(control_plane_snapshot_value autonomous_coding_provider_repair_model none)"
+  log "tau-unified: control_plane.autonomous_coding.provider_repair.context=$(control_plane_snapshot_value autonomous_coding_provider_repair_context_path none)"
+  log "tau-unified: control_plane.autonomous_coding.event_log=$(control_plane_snapshot_value autonomous_coding_event_log_path none)"
+  log "tau-unified: control_plane.autonomous_coding.last_heartbeat_unix_ms=$(control_plane_snapshot_value autonomous_coding_last_heartbeat_unix_ms none)"
+  log "tau-unified: control_plane.autonomous_coding.lease_expires_unix_ms=$(control_plane_snapshot_value autonomous_coding_lease_expires_unix_ms none)"
+  log "tau-unified: control_plane.autonomous_coding.recovery_count=$(control_plane_snapshot_value autonomous_coding_recovery_count 0)"
+  log "tau-unified: control_plane.autonomous_coding.replay_count=$(control_plane_snapshot_value autonomous_coding_replay_count 0)"
+  log "tau-unified: control_plane.autonomous_coding.last_error=$(control_plane_snapshot_value autonomous_coding_last_error none)"
+  log "tau-unified: control_plane.autonomy_boundary=$(control_plane_snapshot_value autonomy_boundary provider_repair_durable_jobs_visible_crash_resume_recovery_in_progress)"
 }
 
 compute_runtime_fingerprint_checksum() {
@@ -472,12 +641,14 @@ build_up_command() {
   local gateway_state_dir="$6"
   local dashboard_state_dir="$7"
   local jobs_state_dir="$8"
-  local request_timeout_ms="$9"
-  local agent_request_max_retries="${10}"
-  local provider_max_retries="${11}"
+  local autonomous_coding_state_dir="$9"
+  local request_timeout_ms="${10}"
+  local agent_request_max_retries="${11}"
+  local provider_max_retries="${12}"
 
   local cmd=(
     env "RUST_MIN_STACK=${RUST_MIN_STACK_DEFAULT}"
+    "TAU_UNIFIED_AUTONOMOUS_CODING_STATE_DIR=${autonomous_coding_state_dir}"
     cargo run -p tau-coding-agent --bin tau-coding-agent --
     --model "${model}"
     --gateway-state-dir "${gateway_state_dir}"
@@ -513,6 +684,7 @@ cmd_up() {
   local gateway_state_dir="${GATEWAY_STATE_DIR_DEFAULT}"
   local dashboard_state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
   local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
   local request_timeout_ms="${REQUEST_TIMEOUT_MS_DEFAULT}"
   local agent_request_max_retries="${AGENT_REQUEST_MAX_RETRIES_DEFAULT}"
   local provider_max_retries="${PROVIDER_MAX_RETRIES_DEFAULT}"
@@ -555,6 +727,10 @@ cmd_up() {
         jobs_state_dir="$2"
         shift 2
         ;;
+      --autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
       --request-timeout-ms)
         request_timeout_ms="$2"
         shift 2
@@ -592,7 +768,7 @@ cmd_up() {
   cleanup_stale_pid
 
   local command
-  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}" "${jobs_state_dir}" "${request_timeout_ms}" "${agent_request_max_retries}" "${provider_max_retries}")"
+  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}" "${jobs_state_dir}" "${autonomous_coding_state_dir}" "${request_timeout_ms}" "${agent_request_max_retries}" "${provider_max_retries}")"
   local runtime_fingerprint
   runtime_fingerprint="$(build_runtime_fingerprint "${command}")"
 
@@ -633,7 +809,7 @@ cmd_up() {
     die "tau-unified: failed to start runtime process"
   fi
 
-  write_control_plane_snapshot "${profile}" "${bind}" "${gateway_state_dir}" "${dashboard_state_dir}" "${jobs_state_dir}"
+  write_control_plane_snapshot "${profile}" "${bind}" "${gateway_state_dir}" "${dashboard_state_dir}" "${jobs_state_dir}" "${autonomous_coding_state_dir}"
   printf '%s\n' "${runtime_fingerprint}" > "${FINGERPRINT_FILE}"
 
   log "tau-unified: started (pid=${pid}) profile=${profile}"
@@ -728,8 +904,9 @@ bootstrap_runtime_for_tui() {
   local gateway_state_dir="$7"
   local dashboard_state_dir="$8"
   local jobs_state_dir="$9"
-  local request_timeout_ms="${10}"
-  local agent_request_max_retries="${11}"
+  local autonomous_coding_state_dir="${10}"
+  local request_timeout_ms="${11}"
+  local agent_request_max_retries="${12}"
   local readiness_timeout_ms="${TUI_READINESS_TIMEOUT_MS_DEFAULT}"
 
   require_positive_integer "${readiness_timeout_ms}" "TAU_UNIFIED_TUI_READINESS_TIMEOUT_MS"
@@ -745,6 +922,7 @@ bootstrap_runtime_for_tui() {
     --gateway-state-dir "${gateway_state_dir}" \
     --dashboard-state-dir "${dashboard_state_dir}" \
     --jobs-state-dir "${jobs_state_dir}" \
+    --autonomous-coding-state-dir "${autonomous_coding_state_dir}" \
     --request-timeout-ms "${request_timeout_ms}" \
     --agent-request-max-retries "${agent_request_max_retries}"
 
@@ -759,6 +937,7 @@ cmd_tui() {
   local dashboard_state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
   local gateway_state_dir="${GATEWAY_STATE_DIR_DEFAULT}"
   local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
   local model="${MODEL_DEFAULT}"
   local bind="${BIND_DEFAULT}"
   local auth_mode="${AUTH_MODE_DEFAULT}"
@@ -814,6 +993,10 @@ cmd_tui() {
         ;;
       --jobs-state-dir)
         jobs_state_dir="$2"
+        shift 2
+        ;;
+      --autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
         shift 2
         ;;
       --model)
@@ -906,6 +1089,7 @@ cmd_tui() {
       "${gateway_state_dir}" \
       "${dashboard_state_dir}" \
       "${jobs_state_dir}" \
+      "${autonomous_coding_state_dir}" \
       "${request_timeout_ms}" \
       "${agent_request_max_retries}"
   fi

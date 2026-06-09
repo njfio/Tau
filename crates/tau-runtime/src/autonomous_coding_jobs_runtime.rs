@@ -6,6 +6,7 @@
 
 use std::{
     collections::BTreeMap,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
@@ -23,6 +24,8 @@ use tau_agent_core::{
 };
 
 use crate::{
+    run_autonomous_coding_provider_repair, AutonomousCodingProviderRepairEvidence,
+    AutonomousCodingProviderRepairPolicy, AutonomousCodingProviderRepairStatus,
     BackgroundJobCreateRequest, BackgroundJobRecord, BackgroundJobRecoveryReport,
     BackgroundJobRuntime, BackgroundJobRuntimeConfig, BackgroundJobTraceContext,
 };
@@ -37,7 +40,11 @@ const AUTONOMOUS_CODING_JOB_REASON_PR_READY: &str = "autonomous_coding_job_pr_re
 const AUTONOMOUS_CODING_JOB_REASON_BLOCKED: &str = "autonomous_coding_job_blocked";
 const AUTONOMOUS_CODING_JOB_REASON_FAILED: &str = "autonomous_coding_job_failed";
 const AUTONOMOUS_CODING_JOB_REASON_RECOVERED: &str = "autonomous_coding_job_background_recovered";
+const AUTONOMOUS_CODING_JOB_REASON_PROVIDER_REPAIR: &str = "autonomous_coding_job_provider_repair";
+const AUTONOMOUS_CODING_JOB_REASON_PROVIDER_REPAIR_EXHAUSTED: &str =
+    "autonomous_coding_job_provider_repair_exhausted";
 const AUTONOMOUS_CODING_JOB_MAX_REPLAY_PASSES: usize = 6;
+const AUTONOMOUS_CODING_JOB_LEASE_MS: u64 = 900_000;
 
 static NEXT_AUTONOMOUS_CODING_JOB_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -94,6 +101,8 @@ pub struct AutonomousCodingJobSubmitRequest {
     pub allowed_roots: Vec<PathBuf>,
     #[serde(default)]
     pub controlled_edits: Vec<CodingMissionControlledEdit>,
+    #[serde(default)]
+    pub provider_repair: AutonomousCodingProviderRepairPolicy,
     pub commit_message: String,
     pub enqueue_background_job: bool,
     #[serde(default)]
@@ -214,6 +223,61 @@ pub struct AutonomousCodingIssueIntakeOutcome {
     pub updated_unix_ms: u64,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomousCodingIssueToMergeStatus {
+    PrReady,
+    AutoMergeRequested,
+    Blocked,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingIssueToMergeRequest {
+    pub intake_id: String,
+    pub mission_id: String,
+    pub session_key: String,
+    pub repo_path: PathBuf,
+    pub issue_url: String,
+    pub issue_title: String,
+    pub issue_body: String,
+    pub goal: String,
+    pub base_branch: String,
+    pub branch_prefix: String,
+    pub verifier_commands: Vec<String>,
+    pub pr_mode: CodingMissionPrMode,
+    pub allowed_roots: Vec<PathBuf>,
+    #[serde(default)]
+    pub controlled_edits: Vec<CodingMissionControlledEdit>,
+    #[serde(default)]
+    pub provider_repair: AutonomousCodingProviderRepairPolicy,
+    pub commit_message: String,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    pub allow_auto_merge: bool,
+    pub merge_method: AutonomousCodingMergeMethod,
+    pub delete_branch: bool,
+    #[serde(default)]
+    pub github_env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub gh_binary: Option<PathBuf>,
+    pub started_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingIssueToMergeOutcome {
+    pub status: AutonomousCodingIssueToMergeStatus,
+    pub reason_code: String,
+    #[serde(default)]
+    pub intake: Option<AutonomousCodingIssueIntakeOutcome>,
+    #[serde(default)]
+    pub submit: Option<AutonomousCodingJobSubmitOutcome>,
+    #[serde(default)]
+    pub run: Option<AutonomousCodingJobRunOutcome>,
+    #[serde(default)]
+    pub auto_merge: Option<AutonomousCodingAutoMergeOutcome>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AutonomousCodingJobRecord {
     pub schema_version: u32,
@@ -232,6 +296,8 @@ pub struct AutonomousCodingJobRecord {
     pub pr_mode: CodingMissionPrMode,
     #[serde(default)]
     pub controlled_edits: Vec<CodingMissionControlledEdit>,
+    #[serde(default)]
+    pub provider_repair: AutonomousCodingProviderRepairPolicy,
     pub commit_message: String,
     pub created_unix_ms: u64,
     pub updated_unix_ms: u64,
@@ -243,6 +309,14 @@ pub struct AutonomousCodingJobRecord {
     pub last_error: Option<String>,
     #[serde(default)]
     pub auto_merge_evidence: Option<AutonomousCodingAutoMergeEvidence>,
+    #[serde(default)]
+    pub provider_repair_evidence: Vec<AutonomousCodingProviderRepairEvidence>,
+    #[serde(default)]
+    pub provider_repair_attempts: u32,
+    #[serde(default)]
+    pub last_heartbeat_unix_ms: Option<u64>,
+    #[serde(default)]
+    pub lease_expires_unix_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -281,7 +355,38 @@ pub struct AutonomousCodingJobStatusSnapshot {
     #[serde(default)]
     pub auto_merge_pr_url: Option<String>,
     #[serde(default)]
+    pub provider_repair_status: Option<String>,
+    #[serde(default)]
+    pub provider_repair_reason_code: Option<String>,
+    #[serde(default)]
+    pub provider_repair_attempts: u32,
+    #[serde(default)]
+    pub provider_repair_max_attempts: u32,
+    #[serde(default)]
+    pub provider_repair_provider: Option<String>,
+    #[serde(default)]
+    pub provider_repair_model: Option<String>,
+    #[serde(default)]
+    pub provider_repair_context_path: Option<PathBuf>,
+    #[serde(default)]
+    pub event_log_path: PathBuf,
+    #[serde(default)]
+    pub last_heartbeat_unix_ms: Option<u64>,
+    #[serde(default)]
+    pub lease_expires_unix_ms: Option<u64>,
+    #[serde(default)]
     pub metadata: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingJobEvent {
+    pub schema_version: u32,
+    pub job_id: String,
+    pub event: String,
+    pub status: AutonomousCodingJobStatus,
+    pub reason_code: String,
+    pub detail: String,
+    pub created_unix_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -368,6 +473,7 @@ impl AutonomousCodingJobRuntime {
             verifier_commands: request.verifier_commands,
             pr_mode: request.pr_mode,
             controlled_edits: request.controlled_edits,
+            provider_repair: request.provider_repair,
             commit_message: request.commit_message,
             created_unix_ms: request.started_unix_ms,
             updated_unix_ms: request.started_unix_ms,
@@ -376,7 +482,22 @@ impl AutonomousCodingJobRuntime {
             last_background_reason_code: None,
             last_error: None,
             auto_merge_evidence: None,
+            provider_repair_evidence: Vec::new(),
+            provider_repair_attempts: 0,
+            last_heartbeat_unix_ms: Some(request.started_unix_ms),
+            lease_expires_unix_ms: Some(
+                request
+                    .started_unix_ms
+                    .saturating_add(AUTONOMOUS_CODING_JOB_LEASE_MS),
+            ),
         };
+        append_autonomous_coding_job_event(
+            &record,
+            "job_submitted",
+            AUTONOMOUS_CODING_JOB_REASON_QUEUED,
+            "durable autonomous coding job submitted",
+            request.started_unix_ms,
+        )?;
 
         let mut background_job = None;
         if request.enqueue_background_job {
@@ -410,7 +531,14 @@ impl AutonomousCodingJobRuntime {
         job_id: &str,
         started_unix_ms: u64,
     ) -> Result<AutonomousCodingJobRunOutcome> {
-        self.execute_job(job_id, None, None, started_unix_ms, ReplayCounterMode::Auto)
+        self.execute_job(
+            job_id,
+            None,
+            None,
+            started_unix_ms,
+            ReplayCounterMode::Auto,
+            AutonomousCodingPrPublicationOptions::default(),
+        )
     }
 
     pub fn replay_job(
@@ -423,7 +551,131 @@ impl AutonomousCodingJobRuntime {
             request.commit_message,
             request.started_unix_ms,
             ReplayCounterMode::Increment,
+            AutonomousCodingPrPublicationOptions::default(),
         )
+    }
+
+    pub async fn run_issue_to_merge(
+        &self,
+        request: AutonomousCodingIssueToMergeRequest,
+    ) -> Result<AutonomousCodingIssueToMergeOutcome> {
+        ensure_autonomous_coding_job_layout(&self.config.state_dir)?;
+        let provider_repair_configured = request.provider_repair.is_configured();
+        if request.verifier_commands.is_empty()
+            || (request.controlled_edits.is_empty() && !provider_repair_configured)
+        {
+            let intake =
+                self.intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+                    intake_id: request.intake_id,
+                    issue_url: request.issue_url,
+                    issue_title: request.issue_title,
+                    issue_body: request.issue_body,
+                    repo_path: request.repo_path,
+                    base_branch: request.base_branch,
+                    started_unix_ms: request.started_unix_ms,
+                })?;
+            return Ok(AutonomousCodingIssueToMergeOutcome {
+                status: AutonomousCodingIssueToMergeStatus::Blocked,
+                reason_code: intake.reason_code.clone(),
+                intake: Some(intake),
+                submit: None,
+                run: None,
+                auto_merge: None,
+            });
+        }
+
+        let allowed_roots = if request.allowed_roots.is_empty() {
+            vec![request.repo_path.clone()]
+        } else {
+            request.allowed_roots.clone()
+        };
+        let submit = self
+            .submit_job(AutonomousCodingJobSubmitRequest {
+                mission_id: request.mission_id,
+                session_key: request.session_key,
+                repo_path: request.repo_path,
+                issue_url: Some(request.issue_url),
+                goal: request.goal,
+                base_branch: request.base_branch,
+                branch_prefix: request.branch_prefix,
+                verifier_commands: request.verifier_commands,
+                pr_mode: request.pr_mode,
+                allowed_roots,
+                controlled_edits: request.controlled_edits,
+                provider_repair: request.provider_repair,
+                commit_message: request.commit_message,
+                enqueue_background_job: false,
+                timeout_ms: request.timeout_ms,
+                started_unix_ms: request.started_unix_ms,
+            })
+            .await?;
+        let job_id = submit.record.job_id.clone();
+        let run = self.execute_job(
+            job_id.as_str(),
+            None,
+            None,
+            request.started_unix_ms.saturating_add(1_000),
+            ReplayCounterMode::Auto,
+            AutonomousCodingPrPublicationOptions {
+                github_env: request.github_env.clone(),
+                gh_binary: request.gh_binary.clone(),
+            },
+        )?;
+
+        if run.status.status != AutonomousCodingJobStatus::PrReady {
+            let status = match run.status.status {
+                AutonomousCodingJobStatus::Blocked => AutonomousCodingIssueToMergeStatus::Blocked,
+                _ => AutonomousCodingIssueToMergeStatus::Failed,
+            };
+            return Ok(AutonomousCodingIssueToMergeOutcome {
+                status,
+                reason_code: run.status.reason_code.clone(),
+                intake: None,
+                submit: Some(submit),
+                run: Some(run),
+                auto_merge: None,
+            });
+        }
+
+        if request.allow_auto_merge {
+            let auto_merge = self.request_auto_merge(AutonomousCodingAutoMergeRequest {
+                job_id,
+                allow_auto_merge: true,
+                merge_method: request.merge_method,
+                delete_branch: request.delete_branch,
+                github_env: request.github_env,
+                gh_binary: request.gh_binary,
+                started_unix_ms: request.started_unix_ms.saturating_add(2_000),
+            })?;
+            let status = match auto_merge.evidence.status {
+                AutonomousCodingAutoMergeStatus::Requested => {
+                    AutonomousCodingIssueToMergeStatus::AutoMergeRequested
+                }
+                AutonomousCodingAutoMergeStatus::Blocked => {
+                    AutonomousCodingIssueToMergeStatus::Blocked
+                }
+                AutonomousCodingAutoMergeStatus::Failed => {
+                    AutonomousCodingIssueToMergeStatus::Failed
+                }
+            };
+            return Ok(AutonomousCodingIssueToMergeOutcome {
+                status,
+                reason_code: auto_merge.evidence.reason_code.clone(),
+                intake: None,
+                submit: Some(submit),
+                run: Some(run),
+                auto_merge: Some(auto_merge),
+            });
+        }
+
+        Ok(AutonomousCodingIssueToMergeOutcome {
+            status: AutonomousCodingIssueToMergeStatus::PrReady,
+            reason_code: run.status.reason_code.clone(),
+            intake: None,
+            submit: Some(submit),
+            run: Some(run),
+            auto_merge: None,
+        })
     }
 
     pub async fn recover_stuck_background_jobs(
@@ -675,9 +927,10 @@ impl AutonomousCodingJobRuntime {
         commit_message_override: Option<String>,
         started_unix_ms: u64,
         replay_counter_mode: ReplayCounterMode,
+        pr_publication: AutonomousCodingPrPublicationOptions,
     ) -> Result<AutonomousCodingJobRunOutcome> {
         let mut record = load_autonomous_coding_job_record(&self.config.state_dir, job_id)?;
-        let controlled_edits =
+        let mut controlled_edits =
             controlled_edits_override.unwrap_or_else(|| record.controlled_edits.clone());
         if !controlled_edits.is_empty() {
             record.controlled_edits = controlled_edits.clone();
@@ -702,8 +955,18 @@ impl AutonomousCodingJobRuntime {
         record.status = AutonomousCodingJobStatus::Running;
         record.reason_code = AUTONOMOUS_CODING_JOB_REASON_RUNNING.to_string();
         record.updated_unix_ms = started_unix_ms;
+        record.last_heartbeat_unix_ms = Some(started_unix_ms);
+        record.lease_expires_unix_ms =
+            Some(started_unix_ms.saturating_add(AUTONOMOUS_CODING_JOB_LEASE_MS));
         record.last_error = None;
         persist_autonomous_coding_job_record(&record)?;
+        append_autonomous_coding_job_event(
+            &record,
+            "job_run_started",
+            AUTONOMOUS_CODING_JOB_REASON_RUNNING,
+            "durable autonomous coding job run started",
+            started_unix_ms,
+        )?;
         self.refresh_status_snapshot(&record)?;
 
         let runner = CodingMissionRunner::new();
@@ -712,6 +975,10 @@ impl AutonomousCodingJobRuntime {
         let mut final_state = state_before;
         for pass in 0..AUTONOMOUS_CODING_JOB_MAX_REPLAY_PASSES {
             let pass_started = started_unix_ms.saturating_add((pass as u64).saturating_mul(1_000));
+            record.last_heartbeat_unix_ms = Some(pass_started);
+            record.lease_expires_unix_ms =
+                Some(pass_started.saturating_add(AUTONOMOUS_CODING_JOB_LEASE_MS));
+            persist_autonomous_coding_job_record(&record)?;
             let outcome = if final_state.phase == CodingMissionPhase::Intake {
                 runner.run(
                     &mut final_state,
@@ -741,12 +1008,22 @@ impl AutonomousCodingJobRuntime {
                     &mut final_state,
                     &record,
                     pass_started.saturating_add(900),
+                    &pr_publication,
                 )?);
                 record.status = AutonomousCodingJobStatus::PrReady;
                 record.reason_code = AUTONOMOUS_CODING_JOB_REASON_PR_READY.to_string();
                 record.updated_unix_ms = pass_started.saturating_add(999);
+                record.last_heartbeat_unix_ms = Some(pass_started.saturating_add(999));
+                record.lease_expires_unix_ms = None;
                 record.last_error = None;
                 persist_autonomous_coding_job_record(&record)?;
+                append_autonomous_coding_job_event(
+                    &record,
+                    "job_pr_ready",
+                    AUTONOMOUS_CODING_JOB_REASON_PR_READY,
+                    "verifier passed and PR-ready evidence exists",
+                    pass_started.saturating_add(999),
+                )?;
                 let status = self.refresh_status_snapshot(&record)?;
                 return Ok(AutonomousCodingJobRunOutcome {
                     record,
@@ -759,8 +1036,20 @@ impl AutonomousCodingJobRuntime {
                 record.status = AutonomousCodingJobStatus::Blocked;
                 record.reason_code = AUTONOMOUS_CODING_JOB_REASON_BLOCKED.to_string();
                 record.updated_unix_ms = pass_started.saturating_add(999);
+                record.last_heartbeat_unix_ms = Some(pass_started.saturating_add(999));
+                record.lease_expires_unix_ms = None;
                 record.last_error = Some(reason);
                 persist_autonomous_coding_job_record(&record)?;
+                append_autonomous_coding_job_event(
+                    &record,
+                    "job_blocked",
+                    AUTONOMOUS_CODING_JOB_REASON_BLOCKED,
+                    record
+                        .last_error
+                        .as_deref()
+                        .unwrap_or("coding mission blocked"),
+                    pass_started.saturating_add(999),
+                )?;
                 let status = self.refresh_status_snapshot(&record)?;
                 return Ok(AutonomousCodingJobRunOutcome {
                     record,
@@ -769,19 +1058,113 @@ impl AutonomousCodingJobRuntime {
                 });
             }
 
-            let waiting_for_edit =
+            let apply_edit_checkpoint =
                 final_state
                     .resume_checkpoint
                     .as_ref()
                     .is_some_and(|checkpoint| {
                         checkpoint.next_action
                             == tau_agent_core::CodingMissionResumeAction::ApplyEdit
-                            && controlled_edits.is_empty()
                     });
+            if apply_edit_checkpoint && !controlled_edits.is_empty() {
+                append_autonomous_coding_job_event(
+                    &record,
+                    "controlled_edit_verifier_failed",
+                    AUTONOMOUS_CODING_JOB_REASON_WAITING_FOR_EDIT,
+                    "controlled/provider repair edit did not satisfy verifier; awaiting next edit",
+                    pass_started.saturating_add(998),
+                )?;
+                controlled_edits.clear();
+                record.controlled_edits.clear();
+                record.updated_unix_ms = pass_started.saturating_add(998);
+                record.last_heartbeat_unix_ms = Some(pass_started.saturating_add(998));
+                persist_autonomous_coding_job_record(&record)?;
+                continue;
+            }
+            let waiting_for_edit = apply_edit_checkpoint && controlled_edits.is_empty();
             if waiting_for_edit {
+                if record.provider_repair.is_configured() {
+                    if record.provider_repair_attempts >= record.provider_repair.max_attempts {
+                        record.status = AutonomousCodingJobStatus::Blocked;
+                        record.reason_code =
+                            AUTONOMOUS_CODING_JOB_REASON_PROVIDER_REPAIR_EXHAUSTED.to_string();
+                        record.updated_unix_ms = pass_started.saturating_add(999);
+                        record.last_heartbeat_unix_ms = Some(pass_started.saturating_add(999));
+                        record.lease_expires_unix_ms = None;
+                        record.last_error = Some("provider repair attempts exhausted".to_string());
+                        persist_autonomous_coding_job_record(&record)?;
+                        append_autonomous_coding_job_event(
+                            &record,
+                            "provider_repair_exhausted",
+                            AUTONOMOUS_CODING_JOB_REASON_PROVIDER_REPAIR_EXHAUSTED,
+                            "provider repair attempts exhausted before verifier passed",
+                            pass_started.saturating_add(999),
+                        )?;
+                        let status = self.refresh_status_snapshot(&record)?;
+                        return Ok(AutonomousCodingJobRunOutcome {
+                            record,
+                            status,
+                            pr_ready_bundle,
+                        });
+                    }
+
+                    let attempt_index = record.provider_repair_attempts.saturating_add(1);
+                    append_autonomous_coding_job_event(
+                        &record,
+                        "provider_repair_requested",
+                        AUTONOMOUS_CODING_JOB_REASON_PROVIDER_REPAIR,
+                        "provider repair adapter invoked after verifier failure",
+                        pass_started.saturating_add(500),
+                    )?;
+                    let repair = run_autonomous_coding_provider_repair(
+                        &record.provider_repair,
+                        &final_state,
+                        &record.job_id,
+                        attempt_index,
+                        &autonomous_coding_job_artifact_dir(&record.state_root, &record.job_id),
+                        pass_started.saturating_add(600),
+                    )?;
+                    record.provider_repair_attempts = attempt_index;
+                    record
+                        .provider_repair_evidence
+                        .push(repair.evidence.clone());
+                    record.updated_unix_ms = pass_started.saturating_add(700);
+                    record.last_heartbeat_unix_ms = Some(pass_started.saturating_add(700));
+                    record.reason_code = repair.evidence.reason_code.clone();
+                    if repair.edits.is_empty() {
+                        record.last_error = repair.evidence.error_summary.clone().or_else(|| {
+                            Some("provider repair produced no applicable edits".to_string())
+                        });
+                        persist_autonomous_coding_job_record(&record)?;
+                        append_autonomous_coding_job_event(
+                            &record,
+                            "provider_repair_rejected",
+                            repair.evidence.reason_code.as_str(),
+                            record
+                                .last_error
+                                .as_deref()
+                                .unwrap_or("provider repair produced no applicable edits"),
+                            pass_started.saturating_add(700),
+                        )?;
+                        continue;
+                    }
+                    controlled_edits = repair.edits;
+                    record.controlled_edits = controlled_edits.clone();
+                    record.last_error = None;
+                    persist_autonomous_coding_job_record(&record)?;
+                    append_autonomous_coding_job_event(
+                        &record,
+                        "provider_repair_ready",
+                        repair.evidence.reason_code.as_str(),
+                        "provider repair edit set accepted for verifier rerun",
+                        pass_started.saturating_add(700),
+                    )?;
+                    continue;
+                }
                 record.status = AutonomousCodingJobStatus::Running;
                 record.reason_code = AUTONOMOUS_CODING_JOB_REASON_WAITING_FOR_EDIT.to_string();
                 record.updated_unix_ms = pass_started.saturating_add(999);
+                record.last_heartbeat_unix_ms = Some(pass_started.saturating_add(999));
                 persist_autonomous_coding_job_record(&record)?;
                 let status = self.refresh_status_snapshot(&record)?;
                 return Ok(AutonomousCodingJobRunOutcome {
@@ -807,8 +1190,17 @@ impl AutonomousCodingJobRuntime {
         record.status = AutonomousCodingJobStatus::Failed;
         record.reason_code = AUTONOMOUS_CODING_JOB_REASON_FAILED.to_string();
         record.updated_unix_ms = started_unix_ms.saturating_add(9_999);
+        record.last_heartbeat_unix_ms = Some(started_unix_ms.saturating_add(9_999));
+        record.lease_expires_unix_ms = None;
         record.last_error = Some("replay_pass_limit_exhausted".to_string());
         persist_autonomous_coding_job_record(&record)?;
+        append_autonomous_coding_job_event(
+            &record,
+            "job_failed",
+            AUTONOMOUS_CODING_JOB_REASON_FAILED,
+            "replay pass limit exhausted",
+            started_unix_ms.saturating_add(9_999),
+        )?;
         let status = self.refresh_status_snapshot(&record)?;
         Ok(AutonomousCodingJobRunOutcome {
             record,
@@ -846,6 +1238,12 @@ enum ReplayCounterMode {
     Increment,
 }
 
+#[derive(Debug, Clone, Default)]
+struct AutonomousCodingPrPublicationOptions {
+    github_env: BTreeMap<String, String>,
+    gh_binary: Option<PathBuf>,
+}
+
 pub fn autonomous_coding_job_record_path(state_dir: &Path, job_id: &str) -> PathBuf {
     state_dir
         .join("autonomous-coding-jobs")
@@ -856,6 +1254,13 @@ pub fn autonomous_coding_job_status_path(state_dir: &Path, job_id: &str) -> Path
     state_dir
         .join("autonomous-coding-jobs")
         .join(format!("{job_id}.status.json"))
+}
+
+pub fn autonomous_coding_job_events_path(state_dir: &Path, job_id: &str) -> PathBuf {
+    state_dir
+        .join("autonomous-coding-jobs")
+        .join(job_id)
+        .join("events.jsonl")
 }
 
 pub fn autonomous_coding_issue_intake_path(state_dir: &Path, intake_id: &str) -> PathBuf {
@@ -901,6 +1306,37 @@ fn persist_autonomous_coding_job_status(
 ) -> Result<()> {
     let path = autonomous_coding_job_status_path(state_dir, &status.job_id);
     write_json_atomic(&path, status)
+}
+
+fn append_autonomous_coding_job_event(
+    record: &AutonomousCodingJobRecord,
+    event: &str,
+    reason_code: &str,
+    detail: &str,
+    created_unix_ms: u64,
+) -> Result<()> {
+    let event_record = AutonomousCodingJobEvent {
+        schema_version: AUTONOMOUS_CODING_JOB_SCHEMA_VERSION,
+        job_id: record.job_id.clone(),
+        event: event.to_string(),
+        status: record.status,
+        reason_code: reason_code.to_string(),
+        detail: detail.to_string(),
+        created_unix_ms,
+    };
+    let path = autonomous_coding_job_events_path(&record.state_root, &record.job_id);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut line = serde_json::to_string(&event_record)?;
+    line.push('\n');
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("failed to open {}", path.display()))?
+        .write_all(line.as_bytes())
+        .with_context(|| format!("failed to append {}", path.display()))
 }
 
 fn persist_autonomous_coding_issue_intake(
@@ -1025,6 +1461,8 @@ fn build_status_snapshot(
                 "none".to_string()
             }
         });
+    let latest_repair = record.provider_repair_evidence.last();
+    let event_log_path = autonomous_coding_job_events_path(&record.state_root, &record.job_id);
     AutonomousCodingJobStatusSnapshot {
         schema_version: AUTONOMOUS_CODING_JOB_SCHEMA_VERSION,
         job_id: record.job_id.clone(),
@@ -1062,6 +1500,17 @@ fn build_status_snapshot(
             .auto_merge_evidence
             .as_ref()
             .and_then(|evidence| evidence.pr_url.clone()),
+        provider_repair_status: latest_repair
+            .map(|evidence| provider_repair_status_label(evidence.status).to_string()),
+        provider_repair_reason_code: latest_repair.map(|evidence| evidence.reason_code.clone()),
+        provider_repair_attempts: record.provider_repair_attempts,
+        provider_repair_max_attempts: record.provider_repair.max_attempts,
+        provider_repair_provider: record.provider_repair.provider.clone(),
+        provider_repair_model: record.provider_repair.model.clone(),
+        provider_repair_context_path: latest_repair.map(|evidence| evidence.context_path.clone()),
+        event_log_path: event_log_path.clone(),
+        last_heartbeat_unix_ms: record.last_heartbeat_unix_ms,
+        lease_expires_unix_ms: record.lease_expires_unix_ms,
         metadata: BTreeMap::from([
             (
                 "mission_state_path".to_string(),
@@ -1074,6 +1523,10 @@ fn build_status_snapshot(
                 autonomous_coding_job_record_path(&record.state_root, &record.job_id)
                     .display()
                     .to_string(),
+            ),
+            (
+                "job_event_log_path".to_string(),
+                event_log_path.display().to_string(),
             ),
         ]),
     }
@@ -1128,6 +1581,7 @@ fn ensure_pr_ready_bundle(
     state: &mut CodingMissionState,
     record: &AutonomousCodingJobRecord,
     started_unix_ms: u64,
+    publication: &AutonomousCodingPrPublicationOptions,
 ) -> Result<CodingMissionPrReadyBundle> {
     if let Some(bundle) = state.pr_ready_bundle.clone() {
         return Ok(bundle);
@@ -1144,8 +1598,8 @@ fn ensure_pr_ready_bundle(
             ],
             rollback_notes: vec!["Revert the autonomous coding mission commit".to_string()],
             allow_draft_pr,
-            github_env: BTreeMap::new(),
-            gh_binary: None,
+            github_env: publication.github_env.clone(),
+            gh_binary: publication.gh_binary.clone(),
             started_unix_ms,
         })
         .map_err(Into::into)
@@ -1172,6 +1626,14 @@ fn pr_publication_status_label(status: CodingMissionPrPublicationStatus) -> &'st
         CodingMissionPrPublicationStatus::ManualReady => "manual_ready",
         CodingMissionPrPublicationStatus::DraftCreated => "draft_created",
         CodingMissionPrPublicationStatus::DraftFailed => "draft_failed",
+    }
+}
+
+fn provider_repair_status_label(status: AutonomousCodingProviderRepairStatus) -> &'static str {
+    match status {
+        AutonomousCodingProviderRepairStatus::Applied => "applied",
+        AutonomousCodingProviderRepairStatus::Rejected => "rejected",
+        AutonomousCodingProviderRepairStatus::Failed => "failed",
     }
 }
 
@@ -1472,6 +1934,287 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn spec_3801_c01_issue_to_merge_runs_pr_ready_and_requests_auto_merge() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let gh = fixture.fake_gh("https://github.com/njfio/Tau/pull/3801\n", 0);
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3801-intake".to_string(),
+                mission_id: "issue-3801-mission".to_string(),
+                session_key: "issue-3801-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3801".to_string(),
+                issue_title: "Make issue-to-merge hands-off".to_string(),
+                issue_body: "Run the authorized coding loop through merge request.".to_string(),
+                goal: "Make the verifier pass and request auto-merge".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-to-merge-".to_string(),
+                verifier_commands: vec![
+                    "grep -q pass status.txt".to_string(),
+                    "grep -q proof docs/notes.txt".to_string(),
+                ],
+                pr_mode: CodingMissionPrMode::Draft,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: fixture.controlled_edits(),
+                provider_repair: AutonomousCodingProviderRepairPolicy::default(),
+                commit_message: "Make issue-to-merge verifier green".to_string(),
+                timeout_ms: Some(5_000),
+                allow_auto_merge: true,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: true,
+                github_env: BTreeMap::from([("GH_TOKEN".to_string(), "test-token".to_string())]),
+                gh_binary: Some(gh.binary.clone()),
+                started_unix_ms: 6_000,
+            })
+            .await
+            .expect("issue to merge");
+
+        assert_eq!(
+            outcome.status,
+            AutonomousCodingIssueToMergeStatus::AutoMergeRequested
+        );
+        assert_eq!(outcome.reason_code, "auto_merge_requested");
+        assert!(outcome.intake.is_none());
+        let run = outcome.run.as_ref().expect("run outcome");
+        assert_eq!(run.status.status, AutonomousCodingJobStatus::PrReady);
+        assert_eq!(run.status.pr_state, "draft_created");
+        assert_eq!(
+            run.status.pr_url.as_deref(),
+            Some("https://github.com/njfio/Tau/pull/3801")
+        );
+        let auto_merge = outcome.auto_merge.as_ref().expect("auto merge");
+        assert_eq!(
+            auto_merge.evidence.status,
+            AutonomousCodingAutoMergeStatus::Requested
+        );
+        assert_eq!(
+            auto_merge.evidence.pr_url.as_deref(),
+            Some("https://github.com/njfio/Tau/pull/3801")
+        );
+
+        let argv = std::fs::read_to_string(&gh.argv_path).expect("captured argv");
+        assert!(argv.contains("pr\nmerge\nhttps://github.com/njfio/Tau/pull/3801"));
+        assert!(argv.contains("--auto\n"));
+        assert!(argv.contains("--squash\n"));
+        assert!(argv.contains("--delete-branch\n"));
+        assert!(!argv.contains("--admin"));
+    }
+
+    #[tokio::test]
+    async fn spec_3801_c03_issue_to_merge_without_edit_authority_blocks_before_mutation() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let before_status =
+            std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status before");
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3801-no-authority".to_string(),
+                mission_id: "issue-3801-no-authority-mission".to_string(),
+                session_key: "issue-3801-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3801".to_string(),
+                issue_title: "Missing edit authority".to_string(),
+                issue_body: "No edit plan has been granted.".to_string(),
+                goal: "Should not mutate without edit authority".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-to-merge-".to_string(),
+                verifier_commands: vec!["grep -q pass status.txt".to_string()],
+                pr_mode: CodingMissionPrMode::PrReady,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: Vec::new(),
+                provider_repair: AutonomousCodingProviderRepairPolicy::default(),
+                commit_message: "Should not be used".to_string(),
+                timeout_ms: Some(5_000),
+                allow_auto_merge: true,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: true,
+                github_env: BTreeMap::from([("GH_TOKEN".to_string(), "test-token".to_string())]),
+                gh_binary: None,
+                started_unix_ms: 6_000,
+            })
+            .await
+            .expect("issue to merge blocked");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::Blocked);
+        assert_eq!(outcome.reason_code, "issue_intake_authority_required");
+        assert!(outcome.intake.is_some());
+        assert!(outcome.submit.is_none());
+        assert!(outcome.run.is_none());
+        assert!(outcome.auto_merge.is_none());
+        assert_eq!(
+            std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status after"),
+            before_status
+        );
+        let jobs_dir = runtime.config().state_dir.join("autonomous-coding-jobs");
+        let job_count = std::fs::read_dir(jobs_dir)
+            .expect("jobs dir")
+            .filter_map(Result::ok)
+            .count();
+        assert_eq!(job_count, 0, "blocked intake should not create jobs");
+    }
+
+    #[tokio::test]
+    async fn spec_3802_c01_provider_repair_runs_inside_durable_job_loop() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair(
+            r#"{"edits":[{"relative_path":"status.txt","contents":"pass\n","reason_code":"provider_status_fix"},{"relative_path":"docs/notes.txt","contents":"proof\n","reason_code":"provider_notes_fix"}]}"#,
+            0,
+        );
+        let mut request = fixture.submit_request(false, Vec::new());
+        request.provider_repair = provider.policy(2, "fake-provider", "repair-model");
+
+        let submitted = runtime.submit_job(request).await.expect("submit job");
+        let outcome = runtime
+            .run_or_replay_job(submitted.record.job_id.as_str(), 8_000)
+            .expect("run with provider repair");
+
+        assert_eq!(outcome.status.status, AutonomousCodingJobStatus::PrReady);
+        assert_eq!(outcome.status.provider_repair_attempts, 1);
+        assert_eq!(
+            outcome.status.provider_repair_status.as_deref(),
+            Some("applied")
+        );
+        assert_eq!(
+            outcome.status.provider_repair_reason_code.as_deref(),
+            Some("provider_repair_edit_parsed")
+        );
+        assert_eq!(
+            outcome.status.provider_repair_provider.as_deref(),
+            Some("fake-provider")
+        );
+        assert_eq!(
+            std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status"),
+            "pass\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(fixture.repo.path().join("docs/notes.txt")).expect("notes"),
+            "proof\n"
+        );
+        assert!(outcome.status.event_log_path.exists());
+        let events = std::fs::read_to_string(&outcome.status.event_log_path).expect("events");
+        assert!(events.contains("provider_repair_requested"));
+        assert!(events.contains("provider_repair_ready"));
+        let context_path =
+            std::fs::read_to_string(&provider.context_path_capture).expect("context path");
+        let context_raw = std::fs::read_to_string(context_path.trim()).expect("context");
+        let context: Value = serde_json::from_str(&context_raw).expect("context json");
+        assert_eq!(context["failed_verifiers"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn spec_3802_c02_provider_repair_accepts_unified_diff() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair(
+            r#"{"diff":"--- a/status.txt\n+++ b/status.txt\n@@ -1 +1 @@\n-fail\n+pass\n","reason_code":"provider_diff_fix"}"#,
+            0,
+        );
+        let mut request = fixture.submit_request(false, Vec::new());
+        request.verifier_commands = vec!["grep -q pass status.txt".to_string()];
+        request.provider_repair = provider.policy(1, "fake-provider", "diff-model");
+
+        let submitted = runtime.submit_job(request).await.expect("submit job");
+        let outcome = runtime
+            .run_or_replay_job(submitted.record.job_id.as_str(), 9_000)
+            .expect("run with provider diff");
+
+        assert_eq!(outcome.status.status, AutonomousCodingJobStatus::PrReady);
+        assert_eq!(outcome.status.provider_repair_attempts, 1);
+        assert_eq!(outcome.status.changed_files, vec!["status.txt"]);
+        assert_eq!(
+            std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status"),
+            "pass\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_3802_c03_malformed_provider_repair_blocks_without_commit() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair("not-json", 0);
+        let mut request = fixture.submit_request(false, Vec::new());
+        request.provider_repair = provider.policy(2, "fake-provider", "bad-model");
+
+        let submitted = runtime.submit_job(request).await.expect("submit job");
+        let outcome = runtime
+            .run_or_replay_job(submitted.record.job_id.as_str(), 10_000)
+            .expect("run with malformed provider repair");
+
+        assert_eq!(outcome.status.status, AutonomousCodingJobStatus::Blocked);
+        assert_eq!(
+            outcome.status.reason_code,
+            AUTONOMOUS_CODING_JOB_REASON_PROVIDER_REPAIR_EXHAUSTED
+        );
+        assert_eq!(outcome.status.provider_repair_attempts, 2);
+        assert_eq!(
+            outcome.status.provider_repair_status.as_deref(),
+            Some("rejected")
+        );
+        assert_eq!(
+            outcome.status.provider_repair_reason_code.as_deref(),
+            Some("provider_repair_output_invalid")
+        );
+        assert_eq!(
+            std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status"),
+            "fail\n"
+        );
+        let log = git(fixture.repo.path(), &["log", "--oneline"]);
+        assert_eq!(log.lines().count(), 1, "blocked repair should not commit");
+    }
+
+    #[tokio::test]
+    async fn spec_3802_c04_issue_to_merge_uses_provider_repair_without_manual_edits() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair(
+            r#"{"files":{"status.txt":"pass\n","docs/notes.txt":"proof\n"},"reason_code":"provider_file_map_fix"}"#,
+            0,
+        );
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3802-provider-intake".to_string(),
+                mission_id: "issue-3802-provider-mission".to_string(),
+                session_key: "issue-3802-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3802".to_string(),
+                issue_title: "Use provider repair".to_string(),
+                issue_body: "Run verifier repair without manual edit authority.".to_string(),
+                goal: "Make the verifier pass through provider repair".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-to-merge-provider-".to_string(),
+                verifier_commands: vec![
+                    "grep -q pass status.txt".to_string(),
+                    "grep -q proof docs/notes.txt".to_string(),
+                ],
+                pr_mode: CodingMissionPrMode::PrReady,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: Vec::new(),
+                provider_repair: provider.policy(2, "fake-provider", "repair-model"),
+                commit_message: "Repair via provider".to_string(),
+                timeout_ms: Some(5_000),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: false,
+                github_env: BTreeMap::new(),
+                gh_binary: None,
+                started_unix_ms: 11_000,
+            })
+            .await
+            .expect("issue-to-merge provider repair");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::PrReady);
+        let run = outcome.run.as_ref().expect("run");
+        assert_eq!(run.status.status, AutonomousCodingJobStatus::PrReady);
+        assert_eq!(run.status.provider_repair_attempts, 1);
+        assert!(outcome.intake.is_none());
+    }
+
     struct CodingJobFixture {
         root: TempDir,
         repo: TempDir,
@@ -1540,6 +2283,7 @@ mod tests {
                 pr_mode: CodingMissionPrMode::PrReady,
                 allowed_roots: vec![self.repo.path().to_path_buf()],
                 controlled_edits,
+                provider_repair: AutonomousCodingProviderRepairPolicy::default(),
                 commit_message: "Make autonomous verifier green".to_string(),
                 enqueue_background_job,
                 timeout_ms: Some(5_000),
@@ -1581,11 +2325,71 @@ mod tests {
             }
             FakeGh { binary, argv_path }
         }
+
+        fn fake_provider_repair(&self, stdout: &str, exit_code: i32) -> FakeProviderRepair {
+            let binary = self.root.path().join(format!(
+                "fake-provider-repair-{}.sh",
+                self.root
+                    .path()
+                    .read_dir()
+                    .map(|entries| entries.count())
+                    .unwrap_or(0)
+            ));
+            let context_path_capture = self.root.path().join(format!(
+                "fake-provider-context-{}.txt",
+                self.root
+                    .path()
+                    .read_dir()
+                    .map(|entries| entries.count())
+                    .unwrap_or(0)
+            ));
+            let script = format!(
+                "#!/usr/bin/env bash\nprintf '%s\\n' \"$TAU_AUTONOMOUS_CODING_REPAIR_CONTEXT\" > {}\ncat <<'TAU_PROVIDER_REPAIR_JSON'\n{}\nTAU_PROVIDER_REPAIR_JSON\nexit {}\n",
+                shell_single_quote(context_path_capture.display().to_string().as_str()),
+                stdout,
+                exit_code
+            );
+            std::fs::write(&binary, script).expect("fake provider");
+            let mut perms = std::fs::metadata(&binary).expect("metadata").permissions();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&binary, perms).expect("chmod");
+            }
+            FakeProviderRepair {
+                binary,
+                context_path_capture,
+            }
+        }
     }
 
     struct FakeGh {
         binary: PathBuf,
         argv_path: PathBuf,
+    }
+
+    struct FakeProviderRepair {
+        binary: PathBuf,
+        context_path_capture: PathBuf,
+    }
+
+    impl FakeProviderRepair {
+        fn policy(
+            &self,
+            max_attempts: u32,
+            provider: &str,
+            model: &str,
+        ) -> AutonomousCodingProviderRepairPolicy {
+            AutonomousCodingProviderRepairPolicy {
+                enabled: true,
+                max_attempts,
+                command: Some(self.binary.clone()),
+                args: Vec::new(),
+                provider: Some(provider.to_string()),
+                model: Some(model.to_string()),
+            }
+        }
     }
 
     async fn make_pr_ready_job_with_pr_url(

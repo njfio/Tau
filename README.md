@@ -12,7 +12,9 @@ the evidence needed to continue.
 Today Tau is strongest as an operator-controlled agent runtime and autonomous
 coding harness. It can run local and provider-backed coding loops, patch multiple
 files, rerun verifiers, commit PR-ready work, expose runtime status, and preserve
-run artifacts. It is not yet a hands-off arbitrary issue-to-merge system.
+run artifacts. Its issue-to-merge loop can run hands-off when verifier and edit
+authority are supplied; without that authority, it blocks before mutation and
+records what is missing.
 
 ## Why Tau Exists
 
@@ -48,6 +50,9 @@ contract-driven; full workspace membership is in [`Cargo.toml`](Cargo.toml).
 - Background autonomous coding job records with submit/run/replay/recover/status
   commands, plus guarded GitHub auto-merge requests when explicit policy, GitHub
   auth, PR URL, and branch protections allow it.
+- A one-command `issue-to-merge` loop that ingests issue context, runs a durable
+  coding job, produces PR-ready or draft-PR evidence, and optionally requests
+  protected-branch-safe auto-merge.
 - Deterministic validation scripts for runtime claims, gateway/auth paths,
   operator maturity, dashboard contracts, TUI behavior, training workflows, and
   RL harness evidence.
@@ -72,13 +77,16 @@ What is landed:
 - Autonomous coding jobs can request normal GitHub auto-merge with `gh pr merge
   --auto` only after explicit policy/auth/PR-ready gates pass. Tau does not use
   admin override flags.
+- `issue-to-merge` can run intake, job submission, verifier-gated execution,
+  PR-ready or draft-PR publication, and optional auto-merge request in one
+  command.
 - Arbitrary issue intake without verifier/edit authority produces a durable
   blocked authority plan instead of mutating the repository.
 
 What is still product work:
 
 - arbitrary issue selection and broad issue-to-PR autonomy with minimal human
-  steering,
+  steering when no verifier/edit authority has been supplied,
 - a polished command-center UX for durable stuck-job recovery, replay, and
   crash-resume across every coding path,
 - automatic PR opening/merging as the default path rather than an explicit,
@@ -97,9 +105,10 @@ The clearest operator path is `tau-unified`:
 ```
 
 `status` emits stable `control_plane.*` markers for health, logs, runtime
-artifacts, sessions, memory, jobs/routines, deploy/process state, and active
-coding missions. These are visibility markers. They do not, by themselves, mean
-every durable recovery and replay workflow is product-polished.
+artifacts, sessions, memory, jobs/routines, deploy/process state, active coding
+missions, and durable autonomous coding jobs. These are visibility markers. They
+do not, by themselves, mean every recovery and replay workflow is
+product-polished.
 
 ## Evidence Map
 
@@ -116,6 +125,8 @@ the repo:
 | Provider-backed coding | `TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh` | Configured-provider edit supply with RED/GREEN verifier and commit evidence |
 | Provider repair loop | `TAU_LIVE_PROVIDER_REPAIR_PROOF=1 ./scripts/dev/test-provider-verifier-repair-loop.sh` | Verifier failure -> targeted provider repair -> rerun -> PR-ready or blocked |
 | Guarded auto-merge/intake | `scripts/dev/test-autonomous-coding-automerge-intake.sh` | Protected-branch-safe auto-merge request gates and no-authority issue intake |
+| Issue-to-merge orchestration | `scripts/dev/test-autonomous-coding-issue-to-merge.sh` | One-command issue intake -> durable job -> verifier -> draft PR -> guarded auto-merge, plus no-authority block |
+| Autonomous coding gauntlet | `scripts/dev/test-autonomous-coding-gauntlet.sh` | Real fixture repos for provider full-file repair, unified diff repair, malformed provider block, missing verifier block, and safe auto-merge flags |
 | Gateway auth/session | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session lifecycle smoke path |
 | Operator maturity | `./scripts/verify/m295-operator-maturity-wave.sh` | TUI, RL, and auth maturity checks |
 
@@ -133,15 +144,16 @@ credentials, network access, and the configured model.
 | Prompt optimization/training | Integrated | Canonical training and rollout-state paths exist |
 | True RL | Integrated harness, not production policy ops | Deterministic rollout/GAE/PPO evidence exists; large-scale promotion operations are still expanding |
 | Dashboard/operator UX | Partial | Routes and diagnostics exist; polished command-center workflows are still being built |
-| Unified control plane | Partial | `tau-unified status` exposes broad runtime visibility; proactive recovery/replay UX is not complete |
-| Autonomous coding | Partial but real | Controlled and provider-backed coding loops work; arbitrary low-touch issue-to-merge is still expanding |
+| Unified control plane | Partial | `tau-unified status` exposes broad runtime and autonomous coding job visibility; proactive recovery/replay UX is not complete |
+| Autonomous coding | Partial but real | Controlled/provider-backed coding loops, durable provider repair, and authorized one-command issue-to-merge work; low-touch operation without supplied verifier/authority is intentionally blocked |
 
 ## Current Build Priorities
 
 - Make the autonomous coding loop more durable: stuck-job recovery, replay,
   crash-resume, and operator status that are easy to trust.
-- Turn provider-backed verifier repair from proof path into the normal coding
-  product loop.
+- Harden provider-backed repair inside durable `issue-to-merge` jobs with larger
+  real-repo gauntlets, better live-provider adapters, and clearer blocked-state
+  recovery.
 - Keep collapsing scattered entrypoints into the `tau-unified` operator
   experience.
 - Continue dashboard extraction and UX cleanup so operator routes feel like a
@@ -231,9 +243,10 @@ Unified one-command runtime entrypoint:
 `./scripts/run/tau-unified.sh status` emits grep-safe `control_plane.*`
 markers for the active runtime. Treat these as operator visibility markers:
 they show available endpoints and state files for health/logs/sessions/memory/
-jobs/routines/deploy, while explicitly preserving the boundary that durable
-replay, stuck-job recovery, crash-resume, and production policy operations are
-not complete claims.
+jobs/routines/deploy plus the latest autonomous coding job status, provider
+repair evidence, PR state, event log, heartbeat, and lease. Durable replay,
+stuck-job recovery, crash-resume, and production policy operations are still not
+complete claims.
 
 `tau-unified.sh tui` defaults to fast-fail interactive policy:
 - `--request-timeout-ms 45000`

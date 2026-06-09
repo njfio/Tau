@@ -193,8 +193,10 @@ test_status_control_plane_snapshot() {
   local test_gateway_state_dir="${tmp_dir}/status-gateway"
   local test_dashboard_state_dir="${tmp_dir}/status-dashboard"
   local test_jobs_state_dir="${tmp_dir}/status-jobs"
+  local test_autonomous_coding_state_dir="${tmp_dir}/status-autonomous-coding"
   local status_bind="127.0.0.1:8911"
   mkdir -p "${test_gateway_state_dir}/coding-missions"
+  mkdir -p "${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job"
   cat >"${test_gateway_state_dir}/coding-missions/status-coding-alpha.json" <<JSON
 {
   "schema_version": 1,
@@ -293,6 +295,44 @@ test_status_control_plane_snapshot() {
   }
 }
 JSON
+  cat >"${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job.status.json" <<JSON
+{
+  "schema_version": 1,
+  "job_id": "status-job",
+  "mission_id": "status-mission",
+  "background_job_id": "background-status-job",
+  "status": "pr_ready",
+  "phase": "pr_ready",
+  "reason_code": "autonomous_coding_job_pr_ready",
+  "repo_path": "${tmp_dir}/fixture-repo",
+  "issue_url": "https://github.com/njfio/Tau/issues/3802",
+  "verifier_summary": "succeeded:coding_verifier_green",
+  "changed_files": ["status.txt", "docs/notes.txt"],
+  "resume_command": "tau-autonomous-coding-job run --job-id status-job",
+  "pr_state": "draft_created",
+  "pr_ready_command": "gh pr create --draft",
+  "pr_url": "https://github.com/example/tau/pull/3802",
+  "recovery_count": 1,
+  "replay_count": 2,
+  "last_background_reason_code": "autonomous_coding_job_background_recovered",
+  "last_error": null,
+  "auto_merge_status": "requested",
+  "auto_merge_reason_code": "auto_merge_requested",
+  "auto_merge_command": "gh pr merge --auto --squash",
+  "auto_merge_pr_url": "https://github.com/example/tau/pull/3802",
+  "provider_repair_status": "applied",
+  "provider_repair_reason_code": "provider_repair_edit_parsed",
+  "provider_repair_attempts": 1,
+  "provider_repair_max_attempts": 3,
+  "provider_repair_provider": "openrouter",
+  "provider_repair_model": "qwen/qwen3-235b-a22b",
+  "provider_repair_context_path": "${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/provider-repair-context-1.json",
+  "event_log_path": "${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/events.jsonl",
+  "last_heartbeat_unix_ms": 200,
+  "lease_expires_unix_ms": 900200,
+  "metadata": {}
+}
+JSON
 
   local up_status_output
   up_status_output="$(
@@ -305,7 +345,8 @@ JSON
       --bind "${status_bind}" \
       --gateway-state-dir "${test_gateway_state_dir}" \
       --dashboard-state-dir "${test_dashboard_state_dir}" \
-      --jobs-state-dir "${test_jobs_state_dir}" 2>&1
+      --jobs-state-dir "${test_jobs_state_dir}" \
+      --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" 2>&1
   )"
   assert_contains "${up_status_output}" "tau-unified: started" "status contract up marker"
   assert_contains "$(cat "${test_runtime_dir}/tau-unified.last-cmd")" "--jobs-state-dir ${test_jobs_state_dir}" "status jobs state command propagation"
@@ -343,6 +384,8 @@ JSON
   assert_contains "${status_output}" "tau-unified: control_plane.gateway_deploy_endpoint=http://${status_bind}/gateway/deploy" "status gateway deploy endpoint"
   assert_contains "${status_output}" "tau-unified: control_plane.gateway_state_dir=${test_gateway_state_dir}" "status gateway state dir"
   assert_contains "${status_output}" "tau-unified: control_plane.dashboard_state_dir=${test_dashboard_state_dir}" "status dashboard state dir"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.state_dir=${test_autonomous_coding_state_dir}" "status autonomous coding state dir"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.jobs_dir=${test_autonomous_coding_state_dir}/autonomous-coding-jobs" "status autonomous coding jobs dir"
   assert_contains "${status_output}" "tau-unified: control_plane.deploy_state_file=${test_gateway_state_dir}/deploy-agent-state.json" "status deploy state file"
   assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.id=status-coding-alpha" "status coding mission id"
   assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.phase=pr_ready" "status coding mission phase"
@@ -354,7 +397,33 @@ JSON
   assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.resume_command=tau coding resume status-coding-alpha" "status coding mission resume command"
   assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.pr_state=manual_ready" "status coding mission pr state"
   assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.pr_url=https://github.com/example/tau/pull/3654" "status coding mission pr url"
-  assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed" "status autonomy boundary"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.job_id=status-job" "status autonomous coding job id"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.mission_id=status-mission" "status autonomous coding mission id"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.status=pr_ready" "status autonomous coding status"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.phase=pr_ready" "status autonomous coding phase"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.reason_code=autonomous_coding_job_pr_ready" "status autonomous coding reason"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.repo=${tmp_dir}/fixture-repo" "status autonomous coding repo"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.verifier=succeeded:coding_verifier_green" "status autonomous coding verifier"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.changed_files=status.txt,docs/notes.txt" "status autonomous coding changed files"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.resume_command=tau-autonomous-coding-job run --job-id status-job" "status autonomous coding resume"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_state=draft_created" "status autonomous coding pr state"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_url=https://github.com/example/tau/pull/3802" "status autonomous coding pr url"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.auto_merge.status=requested" "status autonomous coding auto merge"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.auto_merge.reason_code=auto_merge_requested" "status autonomous coding auto merge reason"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.auto_merge.pr_url=https://github.com/example/tau/pull/3802" "status autonomous coding auto merge pr"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.status=applied" "status autonomous coding provider repair"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.reason_code=provider_repair_edit_parsed" "status autonomous coding provider repair reason"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.attempts=1" "status autonomous coding provider repair attempts"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.max_attempts=3" "status autonomous coding provider repair max"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.provider=openrouter" "status autonomous coding provider"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.model=qwen/qwen3-235b-a22b" "status autonomous coding model"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.context=${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/provider-repair-context-1.json" "status autonomous coding repair context"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.event_log=${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/events.jsonl" "status autonomous coding event log"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.last_heartbeat_unix_ms=200" "status autonomous coding heartbeat"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.lease_expires_unix_ms=900200" "status autonomous coding lease"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.recovery_count=1" "status autonomous coding recovery"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.replay_count=2" "status autonomous coding replay"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=provider_repair_durable_jobs_visible_crash_resume_recovery_in_progress" "status autonomy boundary"
 
   TAU_UNIFIED_RUNNER="${runner}" \
   TAU_UNIFIED_RUNNER_LOG="${test_runner_log}" \
@@ -495,7 +564,7 @@ assert_contains "${status_output}" "tau-unified: control_plane.jobs_endpoint=htt
 assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.state_dir=.tau/jobs" "status background jobs default state marker"
 assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.restart_recovery=running_manifests_requeued_after_restart" "status background jobs recovery marker"
 assert_contains "${status_output}" "tau-unified: control_plane.deploy_endpoint=http://127.0.0.1:8899/ops/deploy" "status deploy marker"
-assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed" "status autonomy boundary marker"
+assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=provider_repair_durable_jobs_visible_crash_resume_recovery_in_progress" "status autonomy boundary marker"
 
 down_output="$(
   TAU_UNIFIED_RUNNER="${runner}" \

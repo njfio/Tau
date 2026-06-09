@@ -16,8 +16,9 @@ use serde_json::json;
 use tau_agent_core::{CodingMissionControlledEdit, CodingMissionPrMode};
 use tau_runtime::{
     AutonomousCodingAutoMergeRequest, AutonomousCodingIssueIntakeRequest,
-    AutonomousCodingJobReplayRequest, AutonomousCodingJobRuntime, AutonomousCodingJobRuntimeConfig,
-    AutonomousCodingJobSubmitRequest, AutonomousCodingMergeMethod,
+    AutonomousCodingIssueToMergeRequest, AutonomousCodingJobReplayRequest,
+    AutonomousCodingJobRuntime, AutonomousCodingJobRuntimeConfig, AutonomousCodingJobSubmitRequest,
+    AutonomousCodingMergeMethod, AutonomousCodingProviderRepairPolicy,
 };
 
 #[derive(Debug, Parser)]
@@ -48,12 +49,16 @@ enum Command {
     IntakeIssue(Box<IssueIntakeArgs>),
     /// Emit a persisted issue-intake authority plan.
     IntakeStatus(Box<IssueIntakeStatusArgs>),
+    /// Run issue intake through PR-ready output and optional guarded auto-merge.
+    IssueToMerge(Box<IssueToMergeArgs>),
 }
 
 #[derive(Debug, Parser)]
 struct JobSubmitArgs {
     #[command(flatten)]
     runtime: RuntimeArgs,
+    #[command(flatten)]
+    provider_repair: ProviderRepairArgs,
 
     #[arg(long)]
     repo_path: PathBuf,
@@ -171,6 +176,57 @@ struct IssueIntakeStatusArgs {
     intake_id: String,
 }
 
+#[derive(Debug, Parser)]
+struct IssueToMergeArgs {
+    #[command(flatten)]
+    runtime: RuntimeArgs,
+    #[command(flatten)]
+    provider_repair: ProviderRepairArgs,
+
+    #[arg(long)]
+    intake_id: String,
+    #[arg(long)]
+    repo_path: PathBuf,
+    #[arg(long)]
+    mission_id: String,
+    #[arg(long, default_value = "local-session")]
+    session_key: String,
+    #[arg(long)]
+    issue_url: String,
+    #[arg(long)]
+    issue_title: String,
+    #[arg(long)]
+    issue_body: String,
+    #[arg(long)]
+    goal: Option<String>,
+    #[arg(long, default_value = "master")]
+    base_branch: String,
+    #[arg(long, default_value = "codex/autonomous-coding-job-")]
+    branch_prefix: String,
+    #[arg(long = "verifier-command")]
+    verifier_commands: Vec<String>,
+    #[arg(long = "allowed-root")]
+    allowed_roots: Vec<PathBuf>,
+    #[arg(long = "edit")]
+    edits: Vec<String>,
+    #[arg(long)]
+    commit_message: Option<String>,
+    #[arg(long, value_enum, default_value = "pr-ready")]
+    pr_mode: PrModeArg,
+    #[arg(long)]
+    timeout_ms: Option<u64>,
+    #[arg(long)]
+    allow_auto_merge: bool,
+    #[arg(long, value_enum, default_value = "squash")]
+    merge_method: MergeMethodArg,
+    #[arg(long)]
+    delete_branch: bool,
+    #[arg(long)]
+    gh_binary: Option<PathBuf>,
+    #[arg(long)]
+    started_unix_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, Parser)]
 struct RuntimeArgs {
     #[arg(long, default_value = ".tau/autonomous-coding")]
@@ -179,6 +235,20 @@ struct RuntimeArgs {
     jobs_state_dir: PathBuf,
     #[arg(long)]
     runner_command: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Parser)]
+struct ProviderRepairArgs {
+    #[arg(long)]
+    provider_repair_command: Option<PathBuf>,
+    #[arg(long = "provider-repair-arg")]
+    provider_repair_args: Vec<String>,
+    #[arg(long, default_value_t = 0)]
+    provider_repair_attempts: u32,
+    #[arg(long)]
+    provider_repair_provider: Option<String>,
+    #[arg(long)]
+    provider_repair_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -230,6 +300,7 @@ async fn run(args: Args) -> Result<()> {
                     pr_mode: args.pr_mode.into(),
                     allowed_roots,
                     controlled_edits: parse_edits(&args.edits)?,
+                    provider_repair: provider_repair_policy(&args.provider_repair),
                     commit_message: args.commit_message,
                     enqueue_background_job: args.enqueue_background_job,
                     timeout_ms: args.timeout_ms,
@@ -314,6 +385,49 @@ async fn run(args: Args) -> Result<()> {
             let outcome = runtime.issue_intake_status(args.intake_id.as_str())?;
             print_json(&outcome)?;
         }
+        Command::IssueToMerge(args) => {
+            let args = *args;
+            let runtime = runtime_from_args(&args.runtime)?;
+            let goal = args.goal.unwrap_or_else(|| {
+                format!("{}\n\n{}", args.issue_title.trim(), args.issue_body.trim())
+            });
+            let commit_message = args
+                .commit_message
+                .unwrap_or_else(|| format!("Resolve {}", args.issue_title.trim()));
+            let allowed_roots = if args.allowed_roots.is_empty() {
+                vec![args.repo_path.clone()]
+            } else {
+                args.allowed_roots
+            };
+            let outcome = runtime
+                .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                    intake_id: args.intake_id,
+                    mission_id: args.mission_id,
+                    session_key: args.session_key,
+                    repo_path: args.repo_path,
+                    issue_url: args.issue_url,
+                    issue_title: args.issue_title,
+                    issue_body: args.issue_body,
+                    goal,
+                    base_branch: args.base_branch,
+                    branch_prefix: args.branch_prefix,
+                    verifier_commands: args.verifier_commands,
+                    pr_mode: args.pr_mode.into(),
+                    allowed_roots,
+                    controlled_edits: parse_edits(&args.edits)?,
+                    provider_repair: provider_repair_policy(&args.provider_repair),
+                    commit_message,
+                    timeout_ms: args.timeout_ms,
+                    allow_auto_merge: args.allow_auto_merge,
+                    merge_method: args.merge_method.into(),
+                    delete_branch: args.delete_branch,
+                    github_env: github_env_from_process(),
+                    gh_binary: args.gh_binary,
+                    started_unix_ms: args.started_unix_ms.unwrap_or_else(now_unix_ms),
+                })
+                .await?;
+            print_json(&outcome)?;
+        }
     }
     Ok(())
 }
@@ -350,6 +464,17 @@ fn parse_edits(raw_edits: &[String]) -> Result<Vec<CodingMissionControlledEdit>>
             })
         })
         .collect()
+}
+
+fn provider_repair_policy(args: &ProviderRepairArgs) -> AutonomousCodingProviderRepairPolicy {
+    AutonomousCodingProviderRepairPolicy {
+        enabled: args.provider_repair_command.is_some() && args.provider_repair_attempts > 0,
+        max_attempts: args.provider_repair_attempts,
+        command: args.provider_repair_command.clone(),
+        args: args.provider_repair_args.clone(),
+        provider: args.provider_repair_provider.clone(),
+        model: args.provider_repair_model.clone(),
+    }
 }
 
 fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
