@@ -670,18 +670,25 @@ impl AutonomousCodingJobRuntime {
     ) -> Result<AutonomousCodingIssueToMergeOutcome> {
         ensure_autonomous_coding_job_layout(&self.config.state_dir)?;
         let provider_repair_configured = request.provider_repair.is_configured();
-        let has_verifier = !request.verifier_commands.is_empty();
+        let verifier_commands = if request.verifier_commands.is_empty() {
+            derive_concrete_docs_verifier_commands(&request.issue_title, &request.issue_body)
+        } else {
+            request.verifier_commands.clone()
+        };
+        let has_verifier = !verifier_commands.is_empty();
         let has_edit_or_provider_authority =
             !request.controlled_edits.is_empty() || provider_repair_configured;
-        if !has_verifier || !has_edit_or_provider_authority {
+        let needs_intake = request.verifier_commands.is_empty() || !has_edit_or_provider_authority;
+        let mut intake_for_outcome = None;
+        if needs_intake {
             let intake = self.intake_issue_with_context(
                 AutonomousCodingIssueIntakeRequest {
-                    intake_id: request.intake_id,
-                    issue_url: request.issue_url,
-                    issue_title: request.issue_title,
-                    issue_body: request.issue_body,
-                    repo_path: request.repo_path,
-                    base_branch: request.base_branch,
+                    intake_id: request.intake_id.clone(),
+                    issue_url: request.issue_url.clone(),
+                    issue_title: request.issue_title.clone(),
+                    issue_body: request.issue_body.clone(),
+                    repo_path: request.repo_path.clone(),
+                    base_branch: request.base_branch.clone(),
                     started_unix_ms: request.started_unix_ms,
                 },
                 IssueIntakeAuthorityContext {
@@ -690,14 +697,20 @@ impl AutonomousCodingJobRuntime {
                     has_required_credentials: true,
                 },
             )?;
-            return Ok(AutonomousCodingIssueToMergeOutcome {
-                status: AutonomousCodingIssueToMergeStatus::Blocked,
-                reason_code: intake.reason_code.clone(),
-                intake: Some(intake),
-                submit: None,
-                run: None,
-                auto_merge: None,
-            });
+            if !has_verifier
+                || !has_edit_or_provider_authority
+                || intake.decision != AutonomousCodingIssueIntakeDecision::ReadyToRun
+            {
+                return Ok(AutonomousCodingIssueToMergeOutcome {
+                    status: AutonomousCodingIssueToMergeStatus::Blocked,
+                    reason_code: intake.reason_code.clone(),
+                    intake: Some(intake),
+                    submit: None,
+                    run: None,
+                    auto_merge: None,
+                });
+            }
+            intake_for_outcome = Some(intake);
         }
 
         let allowed_roots = if request.allowed_roots.is_empty() {
@@ -714,7 +727,7 @@ impl AutonomousCodingJobRuntime {
                 goal: request.goal,
                 base_branch: request.base_branch,
                 branch_prefix: request.branch_prefix,
-                verifier_commands: request.verifier_commands,
+                verifier_commands,
                 pr_mode: request.pr_mode,
                 allowed_roots,
                 controlled_edits: request.controlled_edits,
@@ -746,7 +759,7 @@ impl AutonomousCodingJobRuntime {
             return Ok(AutonomousCodingIssueToMergeOutcome {
                 status,
                 reason_code: run.status.reason_code.clone(),
-                intake: None,
+                intake: intake_for_outcome,
                 submit: Some(submit),
                 run: Some(run),
                 auto_merge: None,
@@ -777,7 +790,7 @@ impl AutonomousCodingJobRuntime {
             return Ok(AutonomousCodingIssueToMergeOutcome {
                 status,
                 reason_code: auto_merge.evidence.reason_code.clone(),
-                intake: None,
+                intake: intake_for_outcome,
                 submit: Some(submit),
                 run: Some(run),
                 auto_merge: Some(auto_merge),
@@ -787,7 +800,7 @@ impl AutonomousCodingJobRuntime {
         Ok(AutonomousCodingIssueToMergeOutcome {
             status: AutonomousCodingIssueToMergeStatus::PrReady,
             reason_code: run.status.reason_code.clone(),
-            intake: None,
+            intake: intake_for_outcome,
             submit: Some(submit),
             run: Some(run),
             auto_merge: None,
@@ -2148,6 +2161,50 @@ fn intake_question(
     }
 }
 
+fn derive_concrete_docs_verifier_commands(title: &str, body: &str) -> Vec<String> {
+    let combined = format!("{title}\n{body}");
+    let normalized = combined.to_ascii_lowercase();
+    if !contains_any(&normalized, &["readme", "docs", "documentation", "guide"]) {
+        return Vec::new();
+    }
+
+    let Some(token) = extract_safe_docs_verifier_token(&combined) else {
+        return Vec::new();
+    };
+
+    let grep_command = if normalized.contains("readme") {
+        format!("grep -n {token} README.md")
+    } else {
+        format!("grep -R -n {token} docs")
+    };
+    vec!["git diff --check".to_string(), grep_command]
+}
+
+fn extract_safe_docs_verifier_token(text: &str) -> Option<String> {
+    for delimiter in ['`', '"'] {
+        let mut parts = text.split(delimiter);
+        while let Some(_) = parts.next() {
+            let Some(candidate) = parts.next() else {
+                break;
+            };
+            let token = candidate.trim();
+            if is_safe_docs_verifier_token(token) {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn is_safe_docs_verifier_token(token: &str) -> bool {
+    let len = token.len();
+    (3..=96).contains(&len)
+        && !token.starts_with('-')
+        && token
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':'))
+}
+
 fn issue_intake_required_authority(
     context: IssueIntakeAuthorityContext,
 ) -> Vec<AutonomousCodingAuthorityRequirement> {
@@ -2248,12 +2305,22 @@ fn issue_intake_verifier_plan(
             next_action: "Provide expected/current behavior and an affected surface.".to_string(),
         },
         _ if contains_any(&normalized, &["readme", "docs", "documentation", "guide"]) => {
-            let mut commands = vec!["git diff --check".to_string()];
-            if normalized.contains("readme") {
-                commands.push("grep -n <expected-text> README.md".to_string());
+            let commands = derive_concrete_docs_verifier_commands(title, body);
+            let commands = if commands.is_empty() {
+                if normalized.contains("readme") {
+                    vec![
+                        "git diff --check".to_string(),
+                        "grep -n <expected-text> README.md".to_string(),
+                    ]
+                } else {
+                    vec![
+                        "git diff --check".to_string(),
+                        "grep -R -n <expected-text> docs".to_string(),
+                    ]
+                }
             } else {
-                commands.push("grep -R -n <expected-text> docs specs README.md".to_string());
-            }
+                commands
+            };
             AutonomousCodingVerifierPlan {
                 plan_kind: "docs".to_string(),
                 summary: "Docs issue can be verified with text assertions and diff hygiene."
@@ -3422,6 +3489,127 @@ mod tests {
         assert_eq!(run.status.status, AutonomousCodingJobStatus::PrReady);
         assert_eq!(run.status.provider_repair_attempts, 1);
         assert!(outcome.intake.is_none());
+    }
+
+    #[tokio::test]
+    async fn spec_3809_c01_issue_to_merge_derives_concrete_docs_verifier() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair(
+            r#"{"files":{"docs/notes.txt":"tau_derived_docs_verifier\n"},"reason_code":"provider_docs_marker"}"#,
+            0,
+        );
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3809-derived-docs".to_string(),
+                mission_id: "issue-3809-derived-docs-mission".to_string(),
+                session_key: "issue-3809-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3809".to_string(),
+                issue_title: "Document `tau_derived_docs_verifier` in docs".to_string(),
+                issue_body:
+                    "Add documentation that includes the exact marker `tau_derived_docs_verifier`."
+                        .to_string(),
+                goal: "Let Tau derive the docs verifier from intake.".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-to-merge-derived-docs-".to_string(),
+                verifier_commands: Vec::new(),
+                pr_mode: CodingMissionPrMode::PrReady,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: Vec::new(),
+                provider_repair: provider.policy(2, "fake-provider", "repair-model"),
+                commit_message: "Document derived verifier marker".to_string(),
+                timeout_ms: Some(5_000),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: false,
+                github_env: BTreeMap::new(),
+                gh_binary: None,
+                started_unix_ms: 12_000,
+            })
+            .await
+            .expect("issue-to-merge derived docs verifier");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::PrReady);
+        let intake = outcome.intake.as_ref().expect("derived intake");
+        assert_eq!(
+            intake.decision,
+            AutonomousCodingIssueIntakeDecision::ReadyToRun
+        );
+        assert_eq!(intake.verifier_plan.plan_kind, "docs");
+        assert!(intake
+            .verifier_plan
+            .suggested_verifier_commands
+            .iter()
+            .any(|command| command == "grep -R -n tau_derived_docs_verifier docs"));
+
+        let submit = outcome.submit.as_ref().expect("submit");
+        assert!(submit
+            .record
+            .verifier_commands
+            .iter()
+            .any(|command| command == "grep -R -n tau_derived_docs_verifier docs"));
+        let run = outcome.run.as_ref().expect("run");
+        assert_eq!(run.status.status, AutonomousCodingJobStatus::PrReady);
+        assert!(run
+            .status
+            .changed_files
+            .iter()
+            .any(|file| file == "docs/notes.txt"));
+    }
+
+    #[tokio::test]
+    async fn spec_3809_c02_issue_to_merge_without_concrete_docs_verifier_still_blocks() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair(
+            r#"{"files":{"docs/notes.txt":"operator recovery evidence\n"},"reason_code":"provider_docs_text"}"#,
+            0,
+        );
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3809-missing-docs-verifier".to_string(),
+                mission_id: "issue-3809-missing-docs-verifier-mission".to_string(),
+                session_key: "issue-3809-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3809".to_string(),
+                issue_title: "Update the docs".to_string(),
+                issue_body: "Explain the operator recovery evidence workflow in documentation."
+                    .to_string(),
+                goal: "Should not mutate without a concrete verifier assertion.".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-to-merge-missing-docs-verifier-".to_string(),
+                verifier_commands: Vec::new(),
+                pr_mode: CodingMissionPrMode::PrReady,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: Vec::new(),
+                provider_repair: provider.policy(2, "fake-provider", "repair-model"),
+                commit_message: "Should not be used".to_string(),
+                timeout_ms: Some(5_000),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: false,
+                github_env: BTreeMap::new(),
+                gh_binary: None,
+                started_unix_ms: 13_000,
+            })
+            .await
+            .expect("issue-to-merge blocks without concrete docs verifier");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::Blocked);
+        let intake = outcome.intake.as_ref().expect("blocked intake");
+        assert_eq!(
+            intake.classification,
+            AutonomousCodingIssueIntakeClassification::MissingVerifier
+        );
+        assert!(intake
+            .required_authority
+            .iter()
+            .any(|authority| authority.reason_code == "verifier_authority_required"));
+        assert!(outcome.submit.is_none());
+        assert!(outcome.run.is_none());
     }
 
     struct CodingJobFixture {

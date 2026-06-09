@@ -155,6 +155,13 @@ auto-merge request. If verifier commands or edit authority are missing, it
 falls back to a blocked issue-intake authority plan and does not mutate the
 repository.
 
+For bounded docs/readme issues, `issue-to-merge` can derive a verifier only when
+the issue includes an exact quoted or backticked single-token marker such as
+`tau_docs_marker`. In that narrow case, Tau records the intake plan and uses
+`git diff --check` plus a concrete `grep` command for the marker. Multi-word
+phrases, placeholders, broad requests, unsafe requests, and normal code changes
+still require an explicit `--verifier-command`.
+
 Run the same loop with built-in OpenRouter-compatible repair authority instead
 of manual edits:
 
