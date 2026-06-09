@@ -197,6 +197,7 @@ test_status_control_plane_snapshot() {
   local status_bind="127.0.0.1:8911"
   mkdir -p "${test_gateway_state_dir}/coding-missions"
   mkdir -p "${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job"
+  mkdir -p "${test_autonomous_coding_state_dir}/issue-intake"
   cat >"${test_gateway_state_dir}/coding-missions/status-coding-alpha.json" <<JSON
 {
   "schema_version": 1,
@@ -345,6 +346,52 @@ JSON
   "metadata": {}
 }
 JSON
+  cat >"${test_autonomous_coding_state_dir}/issue-intake/issue-3808-vague.json" <<JSON
+{
+  "schema_version": 1,
+  "intake_id": "issue-3808-vague",
+  "status": "blocked",
+  "reason_code": "issue_intake_underspecified",
+  "classification": "underspecified",
+  "classification_summary": "Issue is missing expected behavior and verifier detail.",
+  "decision": "needs_clarification",
+  "clarifying_questions": [
+    {
+      "reason_code": "expected_behavior",
+      "question": "What should happen after the fix?",
+      "required_input": "expected behavior"
+    },
+    {
+      "reason_code": "verifier_command",
+      "question": "Which verifier command proves the fix?",
+      "required_input": "verifier command"
+    }
+  ],
+  "issue_url": "https://github.com/njfio/Tau/issues/3808",
+  "issue_title": "Fix it",
+  "issue_body_summary": "Broken",
+  "repo_path": "${tmp_dir}/fixture-repo",
+  "base_branch": "master",
+  "required_authority": [
+    {
+      "reason_code": "verifier_authority_required",
+      "summary": "A verifier command is required before mutation.",
+      "required_input": "verifier command"
+    }
+  ],
+  "verifier_plan": {
+    "plan_kind": "generic_coding",
+    "summary": "Need a focused verifier before editing.",
+    "suggested_verifier_commands": ["cargo test -p tau-runtime spec_3808"],
+    "missing_inputs": ["expected behavior", "verifier command"],
+    "next_action": "Ask for expected behavior and verifier command."
+  },
+  "missing_inputs": ["expected behavior", "verifier command"],
+  "next_action_summary": "Ask for expected behavior and verifier command.",
+  "created_unix_ms": 11,
+  "updated_unix_ms": 12
+}
+JSON
   cat >"${test_autonomous_coding_state_dir}/autonomous-coding-jobs/stale-job.status.json" <<JSON
 {
   "schema_version": 1,
@@ -440,6 +487,7 @@ JSON
   assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.pr_url=https://github.com/example/tau/pull/3654" "status coding mission pr url"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.job_id=status-job" "status autonomous coding job id"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.mission_id=status-mission" "status autonomous coding mission id"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.background_job_id=background-status-job" "status autonomous coding background job id"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.status=pr_ready" "status autonomous coding status"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.phase=pr_ready" "status autonomous coding phase"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.reason_code=autonomous_coding_job_pr_ready" "status autonomous coding reason"
@@ -455,9 +503,14 @@ JSON
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.stale_lease=false" "status autonomous coding stale lease"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.mark_blocked_command=tau-autonomous-coding-job mark-blocked --state-dir ${test_autonomous_coding_state_dir} --job-id status-job --reason-code operator_marked_blocked" "status autonomous coding mark blocked"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_state=draft_created" "status autonomous coding pr state"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_ready_command=gh pr create --draft" "status autonomous coding pr ready command"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_url=https://github.com/example/tau/pull/3802" "status autonomous coding pr url"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_publication.stdout_path=${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/gh-pr-create.stdout" "status autonomous coding pr stdout"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_publication.stderr_path=${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/gh-pr-create.stderr" "status autonomous coding pr stderr"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.pr_publication.exit_status=0" "status autonomous coding pr exit"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.auto_merge.status=requested" "status autonomous coding auto merge"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.auto_merge.reason_code=auto_merge_requested" "status autonomous coding auto merge reason"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.auto_merge.command=gh pr merge --auto --squash" "status autonomous coding auto merge command"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.auto_merge.pr_url=https://github.com/example/tau/pull/3802" "status autonomous coding auto merge pr"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.status=applied" "status autonomous coding provider repair"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.provider_repair.reason_code=provider_repair_edit_parsed" "status autonomous coding provider repair reason"
@@ -471,6 +524,7 @@ JSON
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.lease_expires_unix_ms=900200" "status autonomous coding lease"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.recovery_count=1" "status autonomous coding recovery"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.replay_count=2" "status autonomous coding replay"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomous_coding.last_background_reason_code=autonomous_coding_job_background_recovered" "status autonomous coding background reason"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=provider_repair_durable_jobs_visible_crash_resume_recovery_in_progress" "status autonomy boundary"
 
   local jobs_output
@@ -479,14 +533,39 @@ JSON
   assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job=stale-job status=running operator_state=stale_lease replay_safe=true recoverable=true" "jobs stale summary"
   assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job.stale-job.resume_explanation=recoverable stale lease; run tau-autonomous-coding-job recover --state-dir ${test_autonomous_coding_state_dir}" "jobs stale explanation"
   assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job=status-job status=pr_ready operator_state=complete" "jobs complete summary"
+  assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job.status-job.event_log=${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/events.jsonl" "jobs complete event log"
+  assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job.status-job.provider_repair_context=${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/provider-repair-context-1.json" "jobs complete provider context"
+  assert_contains "${jobs_output}" "tau-unified: autonomous_coding.job.status-job.mark_blocked_command=tau-autonomous-coding-job mark-blocked --state-dir ${test_autonomous_coding_state_dir} --job-id status-job --reason-code operator_marked_blocked" "jobs complete mark blocked command"
 
   local job_output
   job_output="$("${LAUNCHER_SCRIPT}" job status-job --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" 2>&1)"
   assert_contains "${job_output}" "tau-unified: autonomous_coding.job.id=status-job" "job inspect id"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.background_job_id=background-status-job" "job inspect background job id"
   assert_contains "${job_output}" "tau-unified: autonomous_coding.job.verifier=succeeded:coding_verifier_green" "job inspect verifier"
   assert_contains "${job_output}" "tau-unified: autonomous_coding.job.pr_publication_reason_code=draft_pr_created" "job inspect pr publication reason"
   assert_contains "${job_output}" "tau-unified: autonomous_coding.job.pr_publication_command=gh pr create --draft --head codex/status-job" "job inspect pr publication command"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.pr_publication_stdout_path=${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/gh-pr-create.stdout" "job inspect pr publication stdout"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.pr_publication_stderr_path=${test_autonomous_coding_state_dir}/autonomous-coding-jobs/status-job/gh-pr-create.stderr" "job inspect pr publication stderr"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.pr_publication_exit_status=0" "job inspect pr publication exit"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.auto_merge_command=gh pr merge --auto --squash" "job inspect auto merge command"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.last_background_reason_code=autonomous_coding_job_background_recovered" "job inspect background reason"
+  assert_contains "${job_output}" "tau-unified: autonomous_coding.job.provider_repair_model=qwen/qwen3-235b-a22b" "job inspect provider model"
   assert_contains "${job_output}" "tau-unified: autonomous_coding.job.resume_explanation=complete; no replay or recovery needed" "job inspect complete explanation"
+
+  local intakes_output
+  intakes_output="$("${LAUNCHER_SCRIPT}" intakes --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" 2>&1)"
+  assert_contains "${intakes_output}" "tau-unified: autonomous_coding.intakes.count=1" "intakes list count"
+  assert_contains "${intakes_output}" "tau-unified: autonomous_coding.intake=issue-3808-vague status=blocked classification=underspecified decision=needs_clarification reason_code=issue_intake_underspecified question_count=2 missing_input_count=2" "intakes list summary"
+  assert_contains "${intakes_output}" "tau-unified: autonomous_coding.intake.issue-3808-vague.next_action=Ask for expected behavior and verifier command." "intakes list next action"
+
+  local intake_output
+  intake_output="$("${LAUNCHER_SCRIPT}" intake issue-3808-vague --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" 2>&1)"
+  assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.id=issue-3808-vague" "intake inspect id"
+  assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.decision=needs_clarification" "intake inspect decision"
+  assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.verifier_plan.plan_kind=generic_coding" "intake inspect verifier plan kind"
+  assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.verifier_plan.suggested_verifier_commands=cargo test -p tau-runtime spec_3808" "intake inspect suggested verifier"
+  assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.required_authority.verifier_authority_required=A verifier command is required before mutation. required_input=verifier command" "intake inspect authority"
+  assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.question.expected_behavior=What should happen after the fix? required_input=expected behavior" "intake inspect question"
 
   local fake_cli="${tmp_dir}/fake-autonomous-coding-job.sh"
   local fake_cli_args="${tmp_dir}/fake-autonomous-coding-job.args"

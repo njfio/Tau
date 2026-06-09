@@ -91,6 +91,8 @@ commands:
 ```bash
 scripts/run/tau-unified.sh jobs
 scripts/run/tau-unified.sh job <job-id>
+scripts/run/tau-unified.sh intakes
+scripts/run/tau-unified.sh intake <intake-id>
 scripts/run/tau-unified.sh recover
 scripts/run/tau-unified.sh replay <job-id>
 scripts/run/tau-unified.sh block <job-id> \
@@ -102,7 +104,14 @@ scripts/run/tau-unified.sh block <job-id> \
 recoverability, PR state, reason code, next command, and a plain resume
 explanation. `job <job-id>` expands the evidence: verifier summary, provider
 repair state, changed files, draft PR publication command/result, event log, and
-why replay or recovery is safe or unsafe.
+why replay or recovery is safe or unsafe. It also exposes recovery evidence
+paths, provider repair context, GitHub draft PR stdout/stderr/exit status,
+auto-merge command state, heartbeat/lease, and the safe mark-blocked command.
+
+`intakes` lists persisted issue-intake decisions with classification, decision,
+question count, missing-input count, reason code, and next action. `intake
+<intake-id>` expands the verifier plan, suggested verifier commands, required
+authority, missing inputs, and clarifying questions.
 
 Ingest an arbitrary issue without verifier/edit authority:
 
@@ -236,7 +245,8 @@ evidence, and PR-ready bundles stay in the durable job path.
 `.tau/autonomous-coding/autonomous-coding-jobs/*.status.json` and emits
 `control_plane.autonomous_coding.*` markers for the latest job: status,
 verifier summary, provider repair result, event log, heartbeat/lease, replay and
-recovery counts, PR state, and auto-merge state.
+recovery counts, PR state, draft PR publication evidence, background job id and
+last background reason, and auto-merge state.
 
 The status JSON also classifies the operator action surface:
 
