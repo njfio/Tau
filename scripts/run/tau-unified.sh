@@ -42,6 +42,8 @@ Commands:
   status   Show runtime process status and key artifact paths.
   jobs     List durable autonomous coding jobs and recovery decisions.
   job      Inspect one autonomous coding job and its evidence.
+  intakes  List autonomous coding issue-intake decisions.
+  intake   Inspect one autonomous coding issue-intake decision.
   recover  Recover stuck autonomous coding/background jobs.
   replay   Replay one autonomous coding job checkpoint.
   block    Mark one autonomous coding job blocked after operator inspection.
@@ -341,6 +343,7 @@ write_default_autonomous_coding_snapshot_fields() {
   printf 'autonomous_coding_jobs_dir=%s/autonomous-coding-jobs\n' "${autonomous_coding_state_dir}"
   printf 'autonomous_coding_job_id=none\n'
   printf 'autonomous_coding_mission_id=none\n'
+  printf 'autonomous_coding_background_job_id=none\n'
   printf 'autonomous_coding_status=none\n'
   printf 'autonomous_coding_phase=none\n'
   printf 'autonomous_coding_reason_code=none\n'
@@ -356,11 +359,16 @@ write_default_autonomous_coding_snapshot_fields() {
   printf 'autonomous_coding_stale_lease=false\n'
   printf 'autonomous_coding_mark_blocked_command=none\n'
   printf 'autonomous_coding_pr_state=none\n'
+  printf 'autonomous_coding_pr_ready_command=none\n'
   printf 'autonomous_coding_pr_url=none\n'
   printf 'autonomous_coding_pr_publication_reason_code=none\n'
   printf 'autonomous_coding_pr_publication_command=none\n'
+  printf 'autonomous_coding_pr_publication_stdout_path=none\n'
+  printf 'autonomous_coding_pr_publication_stderr_path=none\n'
+  printf 'autonomous_coding_pr_publication_exit_status=none\n'
   printf 'autonomous_coding_auto_merge_status=none\n'
   printf 'autonomous_coding_auto_merge_reason_code=none\n'
+  printf 'autonomous_coding_auto_merge_command=none\n'
   printf 'autonomous_coding_auto_merge_pr_url=none\n'
   printf 'autonomous_coding_provider_repair_status=none\n'
   printf 'autonomous_coding_provider_repair_reason_code=none\n'
@@ -374,6 +382,7 @@ write_default_autonomous_coding_snapshot_fields() {
   printf 'autonomous_coding_lease_expires_unix_ms=none\n'
   printf 'autonomous_coding_recovery_count=0\n'
   printf 'autonomous_coding_replay_count=0\n'
+  printf 'autonomous_coding_last_background_reason_code=none\n'
   printf 'autonomous_coding_last_error=none\n'
 }
 
@@ -434,6 +443,7 @@ fields = {
     "autonomous_coding_jobs_dir": jobs_dir,
     "autonomous_coding_job_id": state.get("job_id"),
     "autonomous_coding_mission_id": state.get("mission_id"),
+    "autonomous_coding_background_job_id": state.get("background_job_id"),
     "autonomous_coding_status": state.get("status"),
     "autonomous_coding_phase": state.get("phase"),
     "autonomous_coding_reason_code": state.get("reason_code"),
@@ -449,11 +459,16 @@ fields = {
     "autonomous_coding_stale_lease": state.get("stale_lease", False),
     "autonomous_coding_mark_blocked_command": state.get("mark_blocked_command"),
     "autonomous_coding_pr_state": state.get("pr_state"),
+    "autonomous_coding_pr_ready_command": state.get("pr_ready_command"),
     "autonomous_coding_pr_url": state.get("pr_url"),
     "autonomous_coding_pr_publication_reason_code": state.get("pr_publication_reason_code"),
     "autonomous_coding_pr_publication_command": state.get("pr_publication_command"),
+    "autonomous_coding_pr_publication_stdout_path": state.get("pr_publication_stdout_path"),
+    "autonomous_coding_pr_publication_stderr_path": state.get("pr_publication_stderr_path"),
+    "autonomous_coding_pr_publication_exit_status": state.get("pr_publication_exit_status"),
     "autonomous_coding_auto_merge_status": state.get("auto_merge_status"),
     "autonomous_coding_auto_merge_reason_code": state.get("auto_merge_reason_code"),
+    "autonomous_coding_auto_merge_command": state.get("auto_merge_command"),
     "autonomous_coding_auto_merge_pr_url": state.get("auto_merge_pr_url"),
     "autonomous_coding_provider_repair_status": state.get("provider_repair_status"),
     "autonomous_coding_provider_repair_reason_code": state.get("provider_repair_reason_code"),
@@ -467,6 +482,7 @@ fields = {
     "autonomous_coding_lease_expires_unix_ms": state.get("lease_expires_unix_ms"),
     "autonomous_coding_recovery_count": state.get("recovery_count", 0),
     "autonomous_coding_replay_count": state.get("replay_count", 0),
+    "autonomous_coding_last_background_reason_code": state.get("last_background_reason_code"),
     "autonomous_coding_last_error": state.get("last_error"),
 }
 
@@ -552,6 +568,7 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.coding_mission.pr_url=$(control_plane_snapshot_value coding_mission_pr_url none)"
   log "tau-unified: control_plane.autonomous_coding.job_id=$(control_plane_snapshot_value autonomous_coding_job_id none)"
   log "tau-unified: control_plane.autonomous_coding.mission_id=$(control_plane_snapshot_value autonomous_coding_mission_id none)"
+  log "tau-unified: control_plane.autonomous_coding.background_job_id=$(control_plane_snapshot_value autonomous_coding_background_job_id none)"
   log "tau-unified: control_plane.autonomous_coding.status=$(control_plane_snapshot_value autonomous_coding_status none)"
   log "tau-unified: control_plane.autonomous_coding.phase=$(control_plane_snapshot_value autonomous_coding_phase none)"
   log "tau-unified: control_plane.autonomous_coding.reason_code=$(control_plane_snapshot_value autonomous_coding_reason_code none)"
@@ -567,11 +584,16 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.autonomous_coding.stale_lease=$(control_plane_snapshot_value autonomous_coding_stale_lease false)"
   log "tau-unified: control_plane.autonomous_coding.mark_blocked_command=$(control_plane_snapshot_value autonomous_coding_mark_blocked_command none)"
   log "tau-unified: control_plane.autonomous_coding.pr_state=$(control_plane_snapshot_value autonomous_coding_pr_state none)"
+  log "tau-unified: control_plane.autonomous_coding.pr_ready_command=$(control_plane_snapshot_value autonomous_coding_pr_ready_command none)"
   log "tau-unified: control_plane.autonomous_coding.pr_url=$(control_plane_snapshot_value autonomous_coding_pr_url none)"
   log "tau-unified: control_plane.autonomous_coding.pr_publication.reason_code=$(control_plane_snapshot_value autonomous_coding_pr_publication_reason_code none)"
   log "tau-unified: control_plane.autonomous_coding.pr_publication.command=$(control_plane_snapshot_value autonomous_coding_pr_publication_command none)"
+  log "tau-unified: control_plane.autonomous_coding.pr_publication.stdout_path=$(control_plane_snapshot_value autonomous_coding_pr_publication_stdout_path none)"
+  log "tau-unified: control_plane.autonomous_coding.pr_publication.stderr_path=$(control_plane_snapshot_value autonomous_coding_pr_publication_stderr_path none)"
+  log "tau-unified: control_plane.autonomous_coding.pr_publication.exit_status=$(control_plane_snapshot_value autonomous_coding_pr_publication_exit_status none)"
   log "tau-unified: control_plane.autonomous_coding.auto_merge.status=$(control_plane_snapshot_value autonomous_coding_auto_merge_status none)"
   log "tau-unified: control_plane.autonomous_coding.auto_merge.reason_code=$(control_plane_snapshot_value autonomous_coding_auto_merge_reason_code none)"
+  log "tau-unified: control_plane.autonomous_coding.auto_merge.command=$(control_plane_snapshot_value autonomous_coding_auto_merge_command none)"
   log "tau-unified: control_plane.autonomous_coding.auto_merge.pr_url=$(control_plane_snapshot_value autonomous_coding_auto_merge_pr_url none)"
   log "tau-unified: control_plane.autonomous_coding.provider_repair.status=$(control_plane_snapshot_value autonomous_coding_provider_repair_status none)"
   log "tau-unified: control_plane.autonomous_coding.provider_repair.reason_code=$(control_plane_snapshot_value autonomous_coding_provider_repair_reason_code none)"
@@ -585,6 +607,7 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.autonomous_coding.lease_expires_unix_ms=$(control_plane_snapshot_value autonomous_coding_lease_expires_unix_ms none)"
   log "tau-unified: control_plane.autonomous_coding.recovery_count=$(control_plane_snapshot_value autonomous_coding_recovery_count 0)"
   log "tau-unified: control_plane.autonomous_coding.replay_count=$(control_plane_snapshot_value autonomous_coding_replay_count 0)"
+  log "tau-unified: control_plane.autonomous_coding.last_background_reason_code=$(control_plane_snapshot_value autonomous_coding_last_background_reason_code none)"
   log "tau-unified: control_plane.autonomous_coding.last_error=$(control_plane_snapshot_value autonomous_coding_last_error none)"
   log "tau-unified: control_plane.autonomy_boundary=$(control_plane_snapshot_value autonomy_boundary provider_repair_durable_jobs_visible_crash_resume_recovery_in_progress)"
 }
@@ -981,6 +1004,12 @@ for state in states:
     )
     print(f"tau-unified: autonomous_coding.job.{job_id}.next_command={clean(state.get('operator_next_command'))}")
     print(f"tau-unified: autonomous_coding.job.{job_id}.resume_explanation={resume_explanation(state)}")
+    print(f"tau-unified: autonomous_coding.job.{job_id}.event_log={clean(state.get('event_log_path'))}")
+    print(
+        f"tau-unified: autonomous_coding.job.{job_id}.provider_repair_context="
+        f"{clean(state.get('provider_repair_context_path'))}"
+    )
+    print(f"tau-unified: autonomous_coding.job.{job_id}.mark_blocked_command={clean(state.get('mark_blocked_command'))}")
 PY
 }
 
@@ -1041,6 +1070,7 @@ with open(path, "r", encoding="utf-8") as handle:
 fields = {
     "id": state.get("job_id"),
     "mission_id": state.get("mission_id"),
+    "background_job_id": state.get("background_job_id"),
     "status": state.get("status"),
     "phase": state.get("phase"),
     "reason_code": state.get("reason_code"),
@@ -1060,15 +1090,192 @@ fields = {
     "pr_ready_command": state.get("pr_ready_command"),
     "pr_publication_reason_code": state.get("pr_publication_reason_code"),
     "pr_publication_command": state.get("pr_publication_command"),
+    "pr_publication_stdout_path": state.get("pr_publication_stdout_path"),
+    "pr_publication_stderr_path": state.get("pr_publication_stderr_path"),
+    "pr_publication_exit_status": state.get("pr_publication_exit_status"),
+    "auto_merge_status": state.get("auto_merge_status"),
+    "auto_merge_reason_code": state.get("auto_merge_reason_code"),
+    "auto_merge_command": state.get("auto_merge_command"),
+    "auto_merge_pr_url": state.get("auto_merge_pr_url"),
     "provider_repair_status": state.get("provider_repair_status"),
     "provider_repair_reason_code": state.get("provider_repair_reason_code"),
+    "provider_repair_attempts": state.get("provider_repair_attempts", 0),
+    "provider_repair_max_attempts": state.get("provider_repair_max_attempts", 0),
+    "provider_repair_provider": state.get("provider_repair_provider"),
+    "provider_repair_model": state.get("provider_repair_model"),
     "provider_repair_context_path": state.get("provider_repair_context_path"),
     "event_log": state.get("event_log_path"),
+    "last_background_reason_code": state.get("last_background_reason_code"),
+    "last_heartbeat_unix_ms": state.get("last_heartbeat_unix_ms"),
+    "lease_expires_unix_ms": state.get("lease_expires_unix_ms"),
     "last_error": state.get("last_error"),
     "resume_explanation": resume_explanation(state),
 }
 for key, value in fields.items():
     print(f"tau-unified: autonomous_coding.job.{key}={clean(value)}")
+PY
+}
+
+cmd_intakes() {
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir|--autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown intakes option: $1"
+        ;;
+    esac
+  done
+
+  python3 - "${autonomous_coding_state_dir}" <<'PY'
+import glob
+import json
+import os
+import sys
+
+state_dir = sys.argv[1]
+intake_dir = os.path.join(state_dir, "issue-intake")
+
+def clean(value, default="none"):
+    if value is None:
+        value = default
+    if isinstance(value, bool):
+        value = str(value).lower()
+    if isinstance(value, (list, tuple)):
+        value = ",".join(clean(item, "") for item in value if clean(item, ""))
+    value = str(value).replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
+    return value if value else default
+
+intakes = []
+for path in glob.glob(os.path.join(intake_dir, "*.json")):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        continue
+    if payload.get("intake_id"):
+        intakes.append(payload)
+
+intakes.sort(key=lambda item: clean(item.get("intake_id"), ""))
+print(f"tau-unified: autonomous_coding.intakes.state_dir={clean(state_dir)}")
+print(f"tau-unified: autonomous_coding.intakes.count={len(intakes)}")
+for intake in intakes:
+    intake_id = clean(intake.get("intake_id"))
+    question_count = len(intake.get("clarifying_questions") or [])
+    missing_input_count = len(intake.get("missing_inputs") or [])
+    print(
+        "tau-unified: autonomous_coding.intake="
+        f"{intake_id} status={clean(intake.get('status'))} "
+        f"classification={clean(intake.get('classification'))} "
+        f"decision={clean(intake.get('decision'))} "
+        f"reason_code={clean(intake.get('reason_code'))} "
+        f"question_count={question_count} "
+        f"missing_input_count={missing_input_count}"
+    )
+    print(f"tau-unified: autonomous_coding.intake.{intake_id}.next_action={clean(intake.get('next_action_summary'))}")
+PY
+}
+
+cmd_intake() {
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
+  local intake_id=""
+  if [[ $# -gt 0 && "$1" != --* ]]; then
+    intake_id="$1"
+    shift
+  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir|--autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
+      --intake-id)
+        intake_id="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown intake option: $1"
+        ;;
+    esac
+  done
+  [[ -n "${intake_id}" ]] || die "intake requires <intake-id> or --intake-id"
+
+  python3 - "${autonomous_coding_state_dir}" "${intake_id}" <<'PY'
+import json
+import os
+import sys
+
+state_dir, intake_id = sys.argv[1:]
+path = os.path.join(state_dir, "issue-intake", f"{intake_id}.json")
+
+def clean(value, default="none"):
+    if value is None:
+        value = default
+    if isinstance(value, bool):
+        value = str(value).lower()
+    if isinstance(value, (list, tuple)):
+        value = ",".join(clean(item, "") for item in value if clean(item, ""))
+    value = str(value).replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
+    return value if value else default
+
+if not os.path.exists(path):
+    print(f"tau-unified: autonomous_coding.intake.error=not_found intake_id={clean(intake_id)}")
+    sys.exit(2)
+
+with open(path, "r", encoding="utf-8") as handle:
+    intake = json.load(handle)
+
+verifier_plan = intake.get("verifier_plan") or {}
+fields = {
+    "id": intake.get("intake_id"),
+    "status": intake.get("status"),
+    "reason_code": intake.get("reason_code"),
+    "classification": intake.get("classification"),
+    "classification_summary": intake.get("classification_summary"),
+    "decision": intake.get("decision"),
+    "issue_url": intake.get("issue_url"),
+    "issue_title": intake.get("issue_title"),
+    "repo": intake.get("repo_path"),
+    "base_branch": intake.get("base_branch"),
+    "next_action": intake.get("next_action_summary"),
+    "missing_inputs": intake.get("missing_inputs") or [],
+    "verifier_plan.plan_kind": verifier_plan.get("plan_kind"),
+    "verifier_plan.summary": verifier_plan.get("summary"),
+    "verifier_plan.suggested_verifier_commands": verifier_plan.get("suggested_verifier_commands") or [],
+    "verifier_plan.missing_inputs": verifier_plan.get("missing_inputs") or [],
+    "verifier_plan.next_action": verifier_plan.get("next_action"),
+}
+for key, value in fields.items():
+    print(f"tau-unified: autonomous_coding.intake.{key}={clean(value)}")
+
+for requirement in intake.get("required_authority") or []:
+    reason = clean(requirement.get("reason_code"), "unknown")
+    summary = clean(requirement.get("summary"))
+    required_input = clean(requirement.get("required_input"))
+    print(
+        f"tau-unified: autonomous_coding.intake.required_authority.{reason}="
+        f"{summary} required_input={required_input}"
+    )
+
+for question in intake.get("clarifying_questions") or []:
+    reason = clean(question.get("reason_code"), "unknown")
+    prompt = clean(question.get("question"))
+    required_input = clean(question.get("required_input"))
+    print(
+        f"tau-unified: autonomous_coding.intake.question.{reason}="
+        f"{prompt} required_input={required_input}"
+    )
 PY
 }
 
@@ -1511,6 +1718,12 @@ case "${command}" in
     ;;
   job)
     cmd_job "$@"
+    ;;
+  intakes)
+    cmd_intakes "$@"
+    ;;
+  intake)
+    cmd_intake "$@"
     ;;
   recover)
     cmd_recover_jobs "$@"
