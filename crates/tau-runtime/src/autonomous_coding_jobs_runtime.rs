@@ -214,6 +214,26 @@ pub enum AutonomousCodingIssueIntakeClassification {
     MissingCredentials,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomousCodingIssueIntakeDecision {
+    ReadyToRun,
+    NeedsAuthority,
+    NeedsClarification,
+    SplitRequired,
+    BlockedUnsafe,
+    MissingCredentials,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingIssueClarifyingQuestion {
+    pub reason_code: String,
+    pub question: String,
+    pub required_input: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AutonomousCodingAuthorityRequirement {
     pub reason_code: String,
@@ -254,6 +274,10 @@ pub struct AutonomousCodingIssueIntakeOutcome {
     pub classification: AutonomousCodingIssueIntakeClassification,
     #[serde(default)]
     pub classification_summary: String,
+    #[serde(default)]
+    pub decision: AutonomousCodingIssueIntakeDecision,
+    #[serde(default)]
+    pub clarifying_questions: Vec<AutonomousCodingIssueClarifyingQuestion>,
     pub issue_url: String,
     pub issue_title: String,
     pub issue_body_summary: String,
@@ -968,6 +992,9 @@ impl AutonomousCodingJobRuntime {
             classification.classification,
             context,
         );
+        let decision = issue_intake_decision(classification.classification);
+        let clarifying_questions =
+            issue_intake_clarifying_questions(classification.classification, context);
         let missing_inputs = verifier_plan.missing_inputs.clone();
         let next_action_summary = verifier_plan.next_action.clone();
         let outcome = AutonomousCodingIssueIntakeOutcome {
@@ -977,6 +1004,8 @@ impl AutonomousCodingJobRuntime {
             reason_code: issue_intake_reason_code(classification.classification).to_string(),
             classification: classification.classification,
             classification_summary: classification.summary,
+            decision,
+            clarifying_questions,
             issue_url: request.issue_url,
             issue_title: request.issue_title,
             issue_body_summary: summarize_issue_body(&request.issue_body),
@@ -1999,6 +2028,126 @@ fn issue_intake_reason_code(
     }
 }
 
+fn issue_intake_decision(
+    classification: AutonomousCodingIssueIntakeClassification,
+) -> AutonomousCodingIssueIntakeDecision {
+    match classification {
+        AutonomousCodingIssueIntakeClassification::Ready
+        | AutonomousCodingIssueIntakeClassification::Solvable => {
+            AutonomousCodingIssueIntakeDecision::ReadyToRun
+        }
+        AutonomousCodingIssueIntakeClassification::MissingVerifier
+        | AutonomousCodingIssueIntakeClassification::MissingEditOrProviderAuthority => {
+            AutonomousCodingIssueIntakeDecision::NeedsAuthority
+        }
+        AutonomousCodingIssueIntakeClassification::Underspecified => {
+            AutonomousCodingIssueIntakeDecision::NeedsClarification
+        }
+        AutonomousCodingIssueIntakeClassification::TooBroad => {
+            AutonomousCodingIssueIntakeDecision::SplitRequired
+        }
+        AutonomousCodingIssueIntakeClassification::Unsafe => {
+            AutonomousCodingIssueIntakeDecision::BlockedUnsafe
+        }
+        AutonomousCodingIssueIntakeClassification::MissingCredentials => {
+            AutonomousCodingIssueIntakeDecision::MissingCredentials
+        }
+    }
+}
+
+fn issue_intake_clarifying_questions(
+    classification: AutonomousCodingIssueIntakeClassification,
+    context: IssueIntakeAuthorityContext,
+) -> Vec<AutonomousCodingIssueClarifyingQuestion> {
+    match classification {
+        AutonomousCodingIssueIntakeClassification::Unsafe => vec![intake_question(
+            "safe_workflow",
+            "Can this be restated as a normal branch and PR change without protected-branch bypass, force-push, secret handling, or exfiltration?",
+            "safe branch/PR workflow",
+        )],
+        AutonomousCodingIssueIntakeClassification::TooBroad => vec![
+            intake_question(
+                "bounded_surface",
+                "Which one module, crate, route, command, or file set should this autonomous job change?",
+                "single affected surface",
+            ),
+            intake_question(
+                "single_acceptance_criterion",
+                "What one acceptance criterion should prove this job is complete?",
+                "one verifier-gated acceptance criterion",
+            ),
+            intake_question(
+                "focused_verifier_command",
+                "What focused verifier command should Tau run before broader validation?",
+                "focused verifier command",
+            ),
+        ],
+        AutonomousCodingIssueIntakeClassification::Underspecified => vec![
+            intake_question(
+                "expected_behavior",
+                "What should happen when the issue is fixed?",
+                "expected behavior",
+            ),
+            intake_question(
+                "current_behavior",
+                "What currently happens, including any reproduction command, error text, or failing test?",
+                "current failing behavior or reproduction",
+            ),
+            intake_question(
+                "affected_surface",
+                "Which file, crate, command, route, or product surface is affected?",
+                "affected surface",
+            ),
+            intake_question(
+                "verifier_command",
+                "Which exact command should Tau run to prove the fix?",
+                "acceptance test or verifier command",
+            ),
+        ],
+        AutonomousCodingIssueIntakeClassification::MissingVerifier
+        | AutonomousCodingIssueIntakeClassification::MissingEditOrProviderAuthority
+        | AutonomousCodingIssueIntakeClassification::MissingCredentials => {
+            let mut questions = Vec::new();
+            if !context.has_verifier {
+                questions.push(intake_question(
+                    "verifier_command",
+                    "Which exact command should Tau run to prove the fix before mutation?",
+                    "--verifier-command or spec-derived test command",
+                ));
+            }
+            if !context.has_edit_or_provider_authority {
+                questions.push(intake_question(
+                    "mutation_authority",
+                    "Should Tau use provider repair, controlled edits, or wait for an operator-supplied patch?",
+                    "--edit, --provider-repair-openrouter, --provider-repair-command, or approved mutation authority",
+                ));
+            }
+            if !context.has_required_credentials {
+                questions.push(intake_question(
+                    "credential_source",
+                    "Which credential source should Tau use for provider repair or draft PR creation?",
+                    "OPENROUTER_API_KEY, GH_TOKEN, GITHUB_TOKEN, or provider-specific credential",
+                ));
+            }
+            questions
+        }
+        AutonomousCodingIssueIntakeClassification::Ready
+        | AutonomousCodingIssueIntakeClassification::Solvable => Vec::new(),
+    }
+}
+
+fn intake_question(
+    reason_code: &str,
+    question: &str,
+    required_input: &str,
+) -> AutonomousCodingIssueClarifyingQuestion {
+    AutonomousCodingIssueClarifyingQuestion {
+        reason_code: reason_code.to_string(),
+        question: question.to_string(),
+        required_input: required_input.to_string(),
+    }
+}
+
 fn issue_intake_required_authority(
     context: IssueIntakeAuthorityContext,
 ) -> Vec<AutonomousCodingAuthorityRequirement> {
@@ -2698,6 +2847,171 @@ mod tests {
             .iter()
             .any(|input| input.contains("specific module")));
         assert!(broad.next_action_summary.contains("Split the issue"));
+    }
+
+    #[tokio::test]
+    async fn spec_3807_c01_underspecified_intake_persists_clarifying_questions() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+
+        let outcome = runtime
+            .intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+                intake_id: "issue-3807-vague".to_string(),
+                issue_url: "https://github.com/njfio/Tau/issues/3807".to_string(),
+                issue_title: "Fix it".to_string(),
+                issue_body: "Broken".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                base_branch: "master".to_string(),
+                started_unix_ms: 5_200,
+            })
+            .expect("vague intake");
+
+        assert_eq!(
+            outcome.classification,
+            AutonomousCodingIssueIntakeClassification::Underspecified
+        );
+        assert_eq!(
+            outcome.decision,
+            AutonomousCodingIssueIntakeDecision::NeedsClarification
+        );
+        let reason_codes: Vec<_> = outcome
+            .clarifying_questions
+            .iter()
+            .map(|question| question.reason_code.as_str())
+            .collect();
+        assert!(reason_codes.contains(&"expected_behavior"));
+        assert!(reason_codes.contains(&"current_behavior"));
+        assert!(reason_codes.contains(&"affected_surface"));
+        assert!(reason_codes.contains(&"verifier_command"));
+
+        let persisted = runtime
+            .issue_intake_status("issue-3807-vague")
+            .expect("persisted vague intake");
+        assert_eq!(persisted.decision, outcome.decision);
+        assert_eq!(persisted.clarifying_questions, outcome.clarifying_questions);
+    }
+
+    #[tokio::test]
+    async fn spec_3807_c02_broad_intake_asks_for_split_contract() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+
+        let outcome = runtime
+            .intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+                intake_id: "issue-3807-broad".to_string(),
+                issue_url: "https://github.com/njfio/Tau/issues/3807".to_string(),
+                issue_title: "Make Tau solve any issue".to_string(),
+                issue_body: "Make the entire repo handle every arbitrary issue automatically."
+                    .to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                base_branch: "master".to_string(),
+                started_unix_ms: 5_201,
+            })
+            .expect("broad intake");
+
+        assert_eq!(
+            outcome.classification,
+            AutonomousCodingIssueIntakeClassification::TooBroad
+        );
+        assert_eq!(
+            outcome.decision,
+            AutonomousCodingIssueIntakeDecision::SplitRequired
+        );
+        let reason_codes: Vec<_> = outcome
+            .clarifying_questions
+            .iter()
+            .map(|question| question.reason_code.as_str())
+            .collect();
+        assert!(reason_codes.contains(&"bounded_surface"));
+        assert!(reason_codes.contains(&"single_acceptance_criterion"));
+    }
+
+    #[tokio::test]
+    async fn spec_3807_c03_ready_intake_with_authority_is_machine_readable() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+
+        let outcome = runtime
+            .intake_issue_with_context(
+                AutonomousCodingIssueIntakeRequest {
+                    intake_id: "issue-3807-ready".to_string(),
+                    issue_url: "https://github.com/njfio/Tau/issues/3807".to_string(),
+                    issue_title: "Fix tau-runtime panic in coding job replay".to_string(),
+                    issue_body:
+                        "Replay fails when a persisted checkpoint exists; verify with the focused tau-runtime replay test."
+                            .to_string(),
+                    repo_path: fixture.repo.path().to_path_buf(),
+                    base_branch: "master".to_string(),
+                    started_unix_ms: 5_202,
+                },
+                IssueIntakeAuthorityContext {
+                    has_verifier: true,
+                    has_edit_or_provider_authority: true,
+                    has_required_credentials: true,
+                },
+            )
+            .expect("ready intake");
+
+        assert_eq!(
+            outcome.classification,
+            AutonomousCodingIssueIntakeClassification::Solvable
+        );
+        assert_eq!(
+            outcome.decision,
+            AutonomousCodingIssueIntakeDecision::ReadyToRun
+        );
+        assert!(outcome.clarifying_questions.is_empty());
+        assert!(outcome.missing_inputs.is_empty());
+    }
+
+    #[test]
+    fn spec_3807_c04_legacy_intake_json_defaults_new_fields() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let path = autonomous_coding_issue_intake_path(
+            runtime.config().state_dir.as_path(),
+            "issue-3807-legacy",
+        );
+        std::fs::create_dir_all(path.parent().expect("intake parent")).expect("intake dir");
+        std::fs::write(
+            &path,
+            serde_json::json!({
+                "schema_version": AUTONOMOUS_CODING_JOB_SCHEMA_VERSION,
+                "intake_id": "issue-3807-legacy",
+                "status": "blocked",
+                "reason_code": "issue_intake_authority_required",
+                "classification": "missing_verifier",
+                "classification_summary": "legacy payload",
+                "issue_url": "https://github.com/njfio/Tau/issues/3807",
+                "issue_title": "Legacy intake",
+                "issue_body_summary": "legacy",
+                "repo_path": fixture.repo.path(),
+                "base_branch": "master",
+                "required_authority": [],
+                "verifier_plan": {
+                    "plan_kind": "generic_coding",
+                    "summary": "legacy",
+                    "suggested_verifier_commands": [],
+                    "missing_inputs": [],
+                    "next_action": "legacy"
+                },
+                "missing_inputs": [],
+                "next_action_summary": "legacy",
+                "created_unix_ms": 1,
+                "updated_unix_ms": 1
+            })
+            .to_string(),
+        )
+        .expect("write legacy intake");
+
+        let loaded = runtime
+            .issue_intake_status("issue-3807-legacy")
+            .expect("load legacy intake");
+        assert_eq!(
+            loaded.decision,
+            AutonomousCodingIssueIntakeDecision::Unknown
+        );
+        assert!(loaded.clarifying_questions.is_empty());
     }
 
     #[tokio::test]
