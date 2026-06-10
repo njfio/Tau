@@ -288,6 +288,8 @@ pub struct AutonomousCodingIssueIntakeOutcome {
     pub clarifying_questions: Vec<AutonomousCodingIssueClarifyingQuestion>,
     pub issue_url: String,
     pub issue_title: String,
+    #[serde(default)]
+    pub issue_body: String,
     pub issue_body_summary: String,
     pub repo_path: PathBuf,
     pub base_branch: String,
@@ -1026,6 +1028,7 @@ impl AutonomousCodingJobRuntime {
         );
         let missing_inputs = verifier_plan.missing_inputs.clone();
         let next_action_summary = verifier_plan.next_action.clone();
+        let issue_body_summary = summarize_issue_body(&request.issue_body);
         let outcome = AutonomousCodingIssueIntakeOutcome {
             schema_version: AUTONOMOUS_CODING_JOB_SCHEMA_VERSION,
             intake_id: request.intake_id,
@@ -1037,7 +1040,8 @@ impl AutonomousCodingJobRuntime {
             clarifying_questions,
             issue_url: request.issue_url,
             issue_title: request.issue_title,
-            issue_body_summary: summarize_issue_body(&request.issue_body),
+            issue_body: request.issue_body,
+            issue_body_summary,
             repo_path,
             base_branch: request.base_branch,
             required_authority: issue_intake_required_authority(context),
@@ -2899,6 +2903,14 @@ mod tests {
         )
         .exists());
         assert_eq!(
+            outcome.issue_body,
+            "Make Tau solve this without verifier/edit authority."
+        );
+        let persisted = runtime
+            .issue_intake_status(outcome.intake_id.as_str())
+            .expect("persisted intake status");
+        assert_eq!(persisted.issue_body, outcome.issue_body);
+        assert_eq!(
             std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status after"),
             before_status
         );
@@ -3092,6 +3104,10 @@ mod tests {
         );
         assert!(outcome.clarifying_questions.is_empty());
         assert!(outcome.missing_inputs.is_empty());
+        assert_eq!(
+            outcome.issue_body,
+            "Replay fails when a persisted checkpoint exists; verify with the focused tau-runtime replay test."
+        );
     }
 
     #[test]
@@ -3142,6 +3158,7 @@ mod tests {
             AutonomousCodingIssueIntakeDecision::Unknown
         );
         assert!(loaded.clarifying_questions.is_empty());
+        assert_eq!(loaded.issue_body, "");
     }
 
     #[tokio::test]

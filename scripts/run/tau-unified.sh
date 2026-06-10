@@ -1214,6 +1214,7 @@ cmd_intake() {
   python3 - "${autonomous_coding_state_dir}" "${intake_id}" <<'PY'
 import json
 import os
+import shlex
 import sys
 
 state_dir, intake_id = sys.argv[1:]
@@ -1228,6 +1229,64 @@ def clean(value, default="none"):
         value = ",".join(clean(item, "") for item in value if clean(item, ""))
     value = str(value).replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
     return value if value else default
+
+def concrete_verifier_commands(commands):
+    concrete = []
+    for command in commands or []:
+        command = str(command).strip()
+        if not command:
+            continue
+        if "<" in command or ">" in command:
+            continue
+        concrete.append(command)
+    return concrete
+
+def intake_rerun_command(intake, state_dir):
+    if intake.get("decision") != "needs_authority":
+        return "none"
+    verifier_plan = intake.get("verifier_plan") or {}
+    verifier_commands = concrete_verifier_commands(verifier_plan.get("suggested_verifier_commands"))
+    if not verifier_commands:
+        return "none"
+    issue_body = str(intake.get("issue_body") or "").strip()
+    repo_path = str(intake.get("repo_path") or "").strip()
+    issue_url = str(intake.get("issue_url") or "").strip()
+    issue_title = str(intake.get("issue_title") or "").strip()
+    intake_id = str(intake.get("intake_id") or "").strip()
+    if not issue_body or not repo_path or not issue_url or not issue_title or not intake_id:
+        return "none"
+    argv = [
+        "tau-autonomous-coding-job",
+        "issue-to-merge",
+        "--state-dir",
+        state_dir,
+        "--intake-id",
+        intake_id,
+        "--repo-path",
+        repo_path,
+        "--mission-id",
+        f"{intake_id}-mission",
+        "--issue-url",
+        issue_url,
+        "--issue-title",
+        issue_title,
+        "--issue-body",
+        issue_body,
+        "--base-branch",
+        str(intake.get("base_branch") or "master"),
+    ]
+    for command in verifier_commands:
+        argv.extend(["--verifier-command", command])
+    argv.extend([
+        "--allowed-root",
+        repo_path,
+        "--provider-repair-openrouter",
+        "--provider-repair-attempts",
+        "3",
+        "--pr-mode",
+        "draft",
+    ])
+    return shlex.join(argv)
 
 if not os.path.exists(path):
     print(f"tau-unified: autonomous_coding.intake.error=not_found intake_id={clean(intake_id)}")
@@ -1255,6 +1314,7 @@ fields = {
     "verifier_plan.suggested_verifier_commands": verifier_plan.get("suggested_verifier_commands") or [],
     "verifier_plan.missing_inputs": verifier_plan.get("missing_inputs") or [],
     "verifier_plan.next_action": verifier_plan.get("next_action"),
+    "rerun_command": intake_rerun_command(intake, state_dir),
 }
 for key, value in fields.items():
     print(f"tau-unified: autonomous_coding.intake.{key}={clean(value)}")
