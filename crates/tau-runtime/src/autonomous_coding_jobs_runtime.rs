@@ -34,7 +34,7 @@ mod verifier_derivation;
 
 use verifier_derivation::{
     derive_concrete_docs_verifier_commands, derive_concrete_verifier_commands,
-    derive_repo_aware_code_verifier_commands,
+    derive_repo_aware_code_verifier_plan,
 };
 
 pub const AUTONOMOUS_CODING_JOB_SCHEMA_VERSION: u32 = 1;
@@ -2312,8 +2312,16 @@ fn issue_intake_verifier_plan(
             &["test", "panic", "rust", "crate", "compile", "clippy"],
         ) =>
         {
-            let mut commands = derive_repo_aware_code_verifier_commands(repo_path, title, body);
-            if commands.is_empty() {
+            let derivation = derive_repo_aware_code_verifier_plan(repo_path, title, body);
+            let derivation_missing_command = derivation.commands.is_empty();
+            let report_missing_derivation_inputs =
+                derivation_missing_command && !context.has_verifier;
+            let mut commands = derivation.commands;
+            let mut plan_missing_inputs = missing_inputs;
+            if report_missing_derivation_inputs {
+                append_missing_inputs(&mut plan_missing_inputs, derivation.missing_inputs);
+            }
+            if derivation_missing_command {
                 commands = vec![
                     "cargo fmt --check".to_string(),
                     "cargo test -p <affected-crate> <focused-test>".to_string(),
@@ -2327,9 +2335,12 @@ fn issue_intake_verifier_plan(
                 summary: "CLI issue should be verified with focused CLI tests and shell proof."
                     .to_string(),
                 suggested_verifier_commands: commands,
-                missing_inputs,
-                next_action: "Provide/approve the focused CLI verifier and mutation authority."
-                    .to_string(),
+                missing_inputs: plan_missing_inputs,
+                next_action: if report_missing_derivation_inputs {
+                    repo_aware_missing_verifier_next_action()
+                } else {
+                    "Provide/approve the focused CLI verifier and mutation authority.".to_string()
+                },
             }
         }
         _ if contains_any(
@@ -2337,25 +2348,35 @@ fn issue_intake_verifier_plan(
             &["test", "panic", "rust", "crate", "compile", "clippy"],
         ) =>
         {
-            let commands = derive_repo_aware_code_verifier_commands(repo_path, title, body);
-            let commands = if commands.is_empty() {
+            let derivation = derive_repo_aware_code_verifier_plan(repo_path, title, body);
+            let derivation_missing_command = derivation.commands.is_empty();
+            let report_missing_derivation_inputs =
+                derivation_missing_command && !context.has_verifier;
+            let mut plan_missing_inputs = missing_inputs;
+            if report_missing_derivation_inputs {
+                append_missing_inputs(&mut plan_missing_inputs, derivation.missing_inputs);
+            }
+            let commands = if derivation_missing_command {
                 vec![
                     "cargo fmt --check".to_string(),
                     "cargo test -p <affected-crate> <focused-test>".to_string(),
                     "cargo clippy -p <affected-crate> --lib --tests -- -D warnings".to_string(),
                 ]
             } else {
-                commands
+                derivation.commands
             };
             AutonomousCodingVerifierPlan {
                 plan_kind: "rust".to_string(),
                 summary: "Rust issue should be verified with focused tests before broader checks."
                     .to_string(),
                 suggested_verifier_commands: commands,
-                missing_inputs,
-                next_action:
+                missing_inputs: plan_missing_inputs,
+                next_action: if report_missing_derivation_inputs {
+                    repo_aware_missing_verifier_next_action()
+                } else {
                     "Provide the affected crate/test target or approve Tau's focused verifier plan."
-                        .to_string(),
+                        .to_string()
+                },
             }
         }
         AutonomousCodingIssueIntakeClassification::Solvable
@@ -2385,6 +2406,19 @@ fn issue_intake_verifier_plan(
             }
         }
     }
+}
+
+fn append_missing_inputs(missing_inputs: &mut Vec<String>, additions: Vec<String>) {
+    for addition in additions {
+        if !missing_inputs.iter().any(|input| input == &addition) {
+            missing_inputs.push(addition);
+        }
+    }
+}
+
+fn repo_aware_missing_verifier_next_action() -> String {
+    "Name an existing Cargo package and exact quoted/backticked test filter, or provide an explicit verifier command plus mutation authority."
+        .to_string()
 }
 
 fn ensure_pr_ready_bundle(
