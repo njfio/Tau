@@ -20,6 +20,8 @@ contract.
 ## Affected Files
 
 - `crates/tau-runtime/src/autonomous_coding_jobs_runtime.rs`
+- `crates/tau-runtime/src/autonomous_coding_jobs_runtime/verifier_derivation.rs`
+- `crates/tau-runtime/src/autonomous_coding_jobs_runtime/tests/repo_aware_verifier.rs`
 - `docs/guides/autonomous-coding-jobs.md`
 - `specs/3810-repo-aware-code-verifiers/*`
 

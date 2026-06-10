@@ -9,6 +9,8 @@
 - [x] T4 (DOCS): Document the package/test-filter boundary.
 - [x] T5 (VERIFY): Run focused tests, runtime module tests, clippy, fmt, and
   diff hygiene.
+- [x] T6 (CI): Keep the touched runtime surface under the oversized-file guard
+  by splitting verifier derivation and focused tests into submodules.
 
 ## Evidence
 
@@ -19,3 +21,4 @@
 - VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3810-target cargo test -p tau-runtime autonomous_coding_jobs_runtime -- --test-threads=1` passed: 26 passed.
 - VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3810-target cargo clippy -p tau-runtime --lib --tests -- -D warnings` passed.
 - VERIFY: `git diff --check` passed.
+- VERIFY: `python3 .github/scripts/oversized_file_guard.py --repo-root . --default-threshold 4000 --exemptions-file tasks/policies/oversized-file-exemptions.json --policy-guide docs/guides/oversized-file-policy.md --json-output-file /tmp/rust_pi-3810-oversized-file-guard.json` passed.
