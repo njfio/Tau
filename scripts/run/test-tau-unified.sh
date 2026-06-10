@@ -392,6 +392,48 @@ JSON
   "updated_unix_ms": 12
 }
 JSON
+  cat >"${test_autonomous_coding_state_dir}/issue-intake/issue-3807-intake-rerun-command.json" <<JSON
+{
+  "schema_version": 1,
+  "intake_id": "issue-3807-intake-rerun-command",
+  "status": "blocked",
+  "reason_code": "issue_intake_missing_edit_or_provider_authority",
+  "classification": "missing_edit_or_provider_authority",
+  "classification_summary": "Issue has a concrete verifier but still needs edit or provider repair authority.",
+  "decision": "needs_authority",
+  "clarifying_questions": [
+    {
+      "reason_code": "mutation_authority",
+      "question": "Should Tau use provider repair, controlled edits, or wait for an operator-supplied patch?",
+      "required_input": "--edit, --provider-repair-openrouter, --provider-repair-command, or approved mutation authority"
+    }
+  ],
+  "issue_url": "https://github.com/njfio/Tau/issues/3807",
+  "issue_title": "Fix fixture-cli Rust test",
+  "issue_body": "The fixture-cli crate has a failing Rust test named spec_3810_repo_aware_verifier and should use the focused verifier.",
+  "issue_body_summary": "The fixture-cli crate has a failing Rust test named spec_3810_repo_aware_verifier and should use the focused verifier.",
+  "repo_path": "${tmp_dir}/fixture-repo",
+  "base_branch": "master",
+  "required_authority": [
+    {
+      "reason_code": "edit_authority_required",
+      "summary": "An edit plan, provider edit authority, or controlled edit set must be provided before mutation.",
+      "required_input": "--edit, --provider-repair-openrouter, --provider-repair-command, or approved mutation authority"
+    }
+  ],
+  "verifier_plan": {
+    "plan_kind": "rust",
+    "summary": "Rust issue should be verified with focused tests before broader checks.",
+    "suggested_verifier_commands": ["cargo test -p fixture-cli spec_3810_repo_aware_verifier"],
+    "missing_inputs": ["controlled edit, provider repair adapter, or explicit mutation authority"],
+    "next_action": "Provide provider repair or controlled edit authority before mutation."
+  },
+  "missing_inputs": ["controlled edit, provider repair adapter, or explicit mutation authority"],
+  "next_action_summary": "Provide provider repair or controlled edit authority before mutation.",
+  "created_unix_ms": 21,
+  "updated_unix_ms": 22
+}
+JSON
   cat >"${test_autonomous_coding_state_dir}/autonomous-coding-jobs/stale-job.status.json" <<JSON
 {
   "schema_version": 1,
@@ -554,7 +596,8 @@ JSON
 
   local intakes_output
   intakes_output="$("${LAUNCHER_SCRIPT}" intakes --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" 2>&1)"
-  assert_contains "${intakes_output}" "tau-unified: autonomous_coding.intakes.count=1" "intakes list count"
+  assert_contains "${intakes_output}" "tau-unified: autonomous_coding.intakes.count=2" "intakes list count"
+  assert_contains "${intakes_output}" "tau-unified: autonomous_coding.intake=issue-3807-intake-rerun-command status=blocked classification=missing_edit_or_provider_authority decision=needs_authority reason_code=issue_intake_missing_edit_or_provider_authority question_count=1 missing_input_count=1" "intakes list needs authority summary"
   assert_contains "${intakes_output}" "tau-unified: autonomous_coding.intake=issue-3808-vague status=blocked classification=underspecified decision=needs_clarification reason_code=issue_intake_underspecified question_count=2 missing_input_count=2" "intakes list summary"
   assert_contains "${intakes_output}" "tau-unified: autonomous_coding.intake.issue-3808-vague.next_action=Ask for expected behavior and verifier command." "intakes list next action"
 
@@ -566,6 +609,18 @@ JSON
   assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.verifier_plan.suggested_verifier_commands=cargo test -p tau-runtime spec_3808" "intake inspect suggested verifier"
   assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.required_authority.verifier_authority_required=A verifier command is required before mutation. required_input=verifier command" "intake inspect authority"
   assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.question.expected_behavior=What should happen after the fix? required_input=expected behavior" "intake inspect question"
+  assert_contains "${intake_output}" "tau-unified: autonomous_coding.intake.rerun_command=none" "vague intake has no rerun command"
+
+  local intake_rerun_output
+  intake_rerun_output="$("${LAUNCHER_SCRIPT}" intake issue-3807-intake-rerun-command --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" 2>&1)"
+  assert_contains "${intake_rerun_output}" "tau-unified: autonomous_coding.intake.id=issue-3807-intake-rerun-command" "intake rerun inspect id"
+  assert_contains "${intake_rerun_output}" "tau-unified: autonomous_coding.intake.rerun_command=tau-autonomous-coding-job issue-to-merge" "intake rerun command marker"
+  assert_contains "${intake_rerun_output}" "--state-dir ${test_autonomous_coding_state_dir}" "intake rerun state dir"
+  assert_contains "${intake_rerun_output}" "--intake-id issue-3807-intake-rerun-command" "intake rerun intake id"
+  assert_contains "${intake_rerun_output}" "--issue-body 'The fixture-cli crate has a failing Rust test named spec_3810_repo_aware_verifier and should use the focused verifier.'" "intake rerun issue body"
+  assert_contains "${intake_rerun_output}" "--verifier-command 'cargo test -p fixture-cli spec_3810_repo_aware_verifier'" "intake rerun verifier command"
+  assert_contains "${intake_rerun_output}" "--provider-repair-openrouter" "intake rerun provider flag"
+  assert_contains "${intake_rerun_output}" "--provider-repair-attempts 3" "intake rerun provider attempts"
 
   local fake_cli="${tmp_dir}/fake-autonomous-coding-job.sh"
   local fake_cli_args="${tmp_dir}/fake-autonomous-coding-job.args"

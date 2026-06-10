@@ -111,7 +111,8 @@ auto-merge command state, heartbeat/lease, and the safe mark-blocked command.
 `intakes` lists persisted issue-intake decisions with classification, decision,
 question count, missing-input count, reason code, and next action. `intake
 <intake-id>` expands the verifier plan, suggested verifier commands, required
-authority, missing inputs, and clarifying questions.
+authority, missing inputs, clarifying questions, and a safe rerun command when
+one can be generated from concrete stored inputs.
 
 Ingest an arbitrary issue without verifier/edit authority:
 
@@ -315,6 +316,14 @@ parsing prose. For example, an underspecified issue records questions for
 `single_acceptance_criterion`. A `ready_to_run` decision only appears when the
 intake path already has verifier, edit/provider authority, and required
 credentials.
+
+For `needs_authority` records that already have the original issue body and a
+concrete verifier command, `tau-unified intake <intake-id>` also prints
+`rerun_command`. The command is shell-quoted, uses
+`tau-autonomous-coding-job issue-to-merge`, supplies the persisted issue fields
+and verifier command, and adds built-in OpenRouter provider-repair authority in
+draft PR mode. Vague, unsafe, broad, missing-verifier, legacy, or placeholder
+verifier records print `rerun_command=none`.
 
 Draft PR behavior is evidence-backed. In draft mode Tau checks for an existing
 PR for the job branch, updates it when found, creates a draft PR when GitHub auth
