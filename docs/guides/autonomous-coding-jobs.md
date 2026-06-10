@@ -158,9 +158,16 @@ repository.
 For bounded docs/readme issues, `issue-to-merge` can derive a verifier only when
 the issue includes an exact quoted or backticked single-token marker such as
 `tau_docs_marker`. In that narrow case, Tau records the intake plan and uses
-`git diff --check` plus a concrete `grep` command for the marker. Multi-word
-phrases, placeholders, broad requests, unsafe requests, and normal code changes
-still require an explicit `--verifier-command`.
+`git diff --check` plus a concrete `grep` command for the marker.
+
+For bounded Rust or CLI issues, Tau can derive one focused verifier when the
+repository has Cargo metadata, the issue text names an actual package, and the
+issue also includes an exact quoted or backticked safe test filter such as
+`spec_3810_repo_aware_verifier`. In that narrow case, the derived command is
+`cargo test -p <package> <test-filter>` and it is persisted in the intake plan
+before the job is created. Multi-word phrases, placeholders, broad requests,
+unsafe requests, unresolved packages, and code issues without a concrete test
+filter still require an explicit `--verifier-command`.
 
 Run the same loop with built-in OpenRouter-compatible repair authority instead
 of manual edits:

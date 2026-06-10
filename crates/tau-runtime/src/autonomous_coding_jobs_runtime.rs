@@ -30,6 +30,13 @@ use crate::{
     BackgroundJobRuntime, BackgroundJobRuntimeConfig, BackgroundJobTraceContext,
 };
 
+mod verifier_derivation;
+
+use verifier_derivation::{
+    derive_concrete_docs_verifier_commands, derive_concrete_verifier_commands,
+    derive_repo_aware_code_verifier_commands,
+};
+
 pub const AUTONOMOUS_CODING_JOB_SCHEMA_VERSION: u32 = 1;
 
 const AUTONOMOUS_CODING_JOB_REASON_QUEUED: &str = "autonomous_coding_job_queued";
@@ -671,7 +678,11 @@ impl AutonomousCodingJobRuntime {
         ensure_autonomous_coding_job_layout(&self.config.state_dir)?;
         let provider_repair_configured = request.provider_repair.is_configured();
         let verifier_commands = if request.verifier_commands.is_empty() {
-            derive_concrete_docs_verifier_commands(&request.issue_title, &request.issue_body)
+            derive_concrete_verifier_commands(
+                request.repo_path.as_path(),
+                &request.issue_title,
+                &request.issue_body,
+            )
         } else {
             request.verifier_commands.clone()
         };
@@ -1000,6 +1011,7 @@ impl AutonomousCodingJobRuntime {
         let classification =
             classify_issue_intake(&request.issue_title, &request.issue_body, context);
         let verifier_plan = issue_intake_verifier_plan(
+            repo_path.as_path(),
             &request.issue_title,
             &request.issue_body,
             classification.classification,
@@ -2161,50 +2173,6 @@ fn intake_question(
     }
 }
 
-fn derive_concrete_docs_verifier_commands(title: &str, body: &str) -> Vec<String> {
-    let combined = format!("{title}\n{body}");
-    let normalized = combined.to_ascii_lowercase();
-    if !contains_any(&normalized, &["readme", "docs", "documentation", "guide"]) {
-        return Vec::new();
-    }
-
-    let Some(token) = extract_safe_docs_verifier_token(&combined) else {
-        return Vec::new();
-    };
-
-    let grep_command = if normalized.contains("readme") {
-        format!("grep -n {token} README.md")
-    } else {
-        format!("grep -R -n {token} docs")
-    };
-    vec!["git diff --check".to_string(), grep_command]
-}
-
-fn extract_safe_docs_verifier_token(text: &str) -> Option<String> {
-    for delimiter in ['`', '"'] {
-        let mut parts = text.split(delimiter);
-        while let Some(_) = parts.next() {
-            let Some(candidate) = parts.next() else {
-                break;
-            };
-            let token = candidate.trim();
-            if is_safe_docs_verifier_token(token) {
-                return Some(token.to_string());
-            }
-        }
-    }
-    None
-}
-
-fn is_safe_docs_verifier_token(token: &str) -> bool {
-    let len = token.len();
-    (3..=96).contains(&len)
-        && !token.starts_with('-')
-        && token
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':'))
-}
-
 fn issue_intake_required_authority(
     context: IssueIntakeAuthorityContext,
 ) -> Vec<AutonomousCodingAuthorityRequirement> {
@@ -2240,6 +2208,7 @@ fn issue_intake_required_authority(
 }
 
 fn issue_intake_verifier_plan(
+    repo_path: &Path,
     title: &str,
     body: &str,
     classification: AutonomousCodingIssueIntakeClassification,
@@ -2338,13 +2307,18 @@ fn issue_intake_verifier_plan(
         _ if contains_any(
             &normalized,
             &["cli", "command", "flag", "argument", "subcommand"],
+        ) && !contains_any(
+            &normalized,
+            &["test", "panic", "rust", "crate", "compile", "clippy"],
         ) =>
         {
-            let mut commands = vec![
-                "cargo fmt --check".to_string(),
-                "cargo test -p tau-coding-agent --bin tau_autonomous_coding_job <focused-test>"
-                    .to_string(),
-            ];
+            let mut commands = derive_repo_aware_code_verifier_commands(repo_path, title, body);
+            if commands.is_empty() {
+                commands = vec![
+                    "cargo fmt --check".to_string(),
+                    "cargo test -p <affected-crate> <focused-test>".to_string(),
+                ];
+            }
             if normalized.contains("tau-unified") {
                 commands.push("scripts/run/test-tau-unified.sh".to_string());
             }
@@ -2363,15 +2337,21 @@ fn issue_intake_verifier_plan(
             &["test", "panic", "rust", "crate", "compile", "clippy"],
         ) =>
         {
+            let commands = derive_repo_aware_code_verifier_commands(repo_path, title, body);
+            let commands = if commands.is_empty() {
+                vec![
+                    "cargo fmt --check".to_string(),
+                    "cargo test -p <affected-crate> <focused-test>".to_string(),
+                    "cargo clippy -p <affected-crate> --lib --tests -- -D warnings".to_string(),
+                ]
+            } else {
+                commands
+            };
             AutonomousCodingVerifierPlan {
                 plan_kind: "rust".to_string(),
                 summary: "Rust issue should be verified with focused tests before broader checks."
                     .to_string(),
-                suggested_verifier_commands: vec![
-                    "cargo fmt --check".to_string(),
-                    "cargo test -p <affected-crate> <focused-test>".to_string(),
-                    "cargo clippy -p <affected-crate> --lib --tests -- -D warnings".to_string(),
-                ],
+                suggested_verifier_commands: commands,
                 missing_inputs,
                 next_action:
                     "Provide the affected crate/test target or approve Tau's focused verifier plan."
@@ -2497,6 +2477,8 @@ mod tests {
     use serde_json::Value;
     use tau_agent_core::{coding_mission_state_path, load_coding_mission_state};
     use tempfile::TempDir;
+
+    include!("autonomous_coding_jobs_runtime/tests/repo_aware_verifier.rs");
 
     #[tokio::test]
     async fn spec_c01_submit_persists_mission_and_background_record_link() {
@@ -3701,6 +3683,33 @@ mod tests {
                     reason_code: "controlled_notes_fix".to_string(),
                 },
             ]
+        }
+
+        fn install_rust_workspace_fixture(&self, marker: &str) {
+            std::fs::create_dir_all(self.repo.path().join("crates/fixture-cli/src"))
+                .expect("fixture crate dir");
+            std::fs::write(
+                self.repo.path().join("Cargo.toml"),
+                "[workspace]\nmembers = [\"crates/fixture-cli\"]\nresolver = \"2\"\n",
+            )
+            .expect("workspace cargo toml");
+            std::fs::write(
+                self.repo.path().join("crates/fixture-cli/Cargo.toml"),
+                "[package]\nname = \"fixture-cli\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            )
+            .expect("fixture cargo toml");
+            std::fs::write(
+                self.repo.path().join("crates/fixture-cli/src/lib.rs"),
+                format!(
+                    "pub fn marker() -> &'static str {{\n    \"{marker}\"\n}}\n\n#[cfg(test)]\nmod tests {{\n    use super::*;\n\n    #[test]\n    fn spec_3810_repo_aware_verifier() {{\n        assert_eq!(marker(), \"pass\");\n    }}\n}}\n"
+                ),
+            )
+            .expect("fixture lib");
+            git(self.repo.path(), &["add", "."]);
+            git(
+                self.repo.path(),
+                &["commit", "-m", "Add Rust workspace fixture"],
+            );
         }
 
         fn fake_gh(&self, stdout: &str, exit_code: i32) -> FakeGh {
