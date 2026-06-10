@@ -671,7 +671,11 @@ impl AutonomousCodingJobRuntime {
         ensure_autonomous_coding_job_layout(&self.config.state_dir)?;
         let provider_repair_configured = request.provider_repair.is_configured();
         let verifier_commands = if request.verifier_commands.is_empty() {
-            derive_concrete_docs_verifier_commands(&request.issue_title, &request.issue_body)
+            derive_concrete_verifier_commands(
+                request.repo_path.as_path(),
+                &request.issue_title,
+                &request.issue_body,
+            )
         } else {
             request.verifier_commands.clone()
         };
@@ -1000,6 +1004,7 @@ impl AutonomousCodingJobRuntime {
         let classification =
             classify_issue_intake(&request.issue_title, &request.issue_body, context);
         let verifier_plan = issue_intake_verifier_plan(
+            repo_path.as_path(),
             &request.issue_title,
             &request.issue_body,
             classification.classification,
@@ -2180,7 +2185,115 @@ fn derive_concrete_docs_verifier_commands(title: &str, body: &str) -> Vec<String
     vec!["git diff --check".to_string(), grep_command]
 }
 
+fn derive_concrete_verifier_commands(repo_path: &Path, title: &str, body: &str) -> Vec<String> {
+    let docs_commands = derive_concrete_docs_verifier_commands(title, body);
+    if !docs_commands.is_empty() {
+        return docs_commands;
+    }
+    derive_repo_aware_code_verifier_commands(repo_path, title, body)
+}
+
+fn derive_repo_aware_code_verifier_commands(
+    repo_path: &Path,
+    title: &str,
+    body: &str,
+) -> Vec<String> {
+    let combined = format!("{title}\n{body}");
+    let normalized = combined.to_ascii_lowercase();
+    if !contains_any(
+        &normalized,
+        &[
+            "cli",
+            "command",
+            "flag",
+            "argument",
+            "subcommand",
+            "test",
+            "panic",
+            "rust",
+            "crate",
+            "compile",
+            "clippy",
+        ],
+    ) {
+        return Vec::new();
+    }
+
+    let package_names = repo_cargo_package_names(repo_path);
+    let Some(package_name) = resolve_referenced_package_name(&package_names, &combined) else {
+        return Vec::new();
+    };
+    if !is_safe_cargo_package_name(&package_name) {
+        return Vec::new();
+    }
+
+    let Some(test_filter) = resolve_referenced_test_filter(&combined, &package_names) else {
+        return Vec::new();
+    };
+
+    vec![format!("cargo test -p {package_name} {test_filter}")]
+}
+
+fn repo_cargo_package_names(repo_path: &Path) -> Vec<String> {
+    let Ok(output) = Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(repo_path)
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let Ok(metadata) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+        return Vec::new();
+    };
+    let mut names = metadata
+        .get("packages")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|package| package.get("name"))
+        .filter_map(serde_json::Value::as_str)
+        .filter(|name| is_safe_cargo_package_name(name))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn resolve_referenced_package_name(package_names: &[String], text: &str) -> Option<String> {
+    let normalized = text.to_ascii_lowercase();
+    let mut candidates = package_names.to_vec();
+    candidates.sort_by_key(|name| std::cmp::Reverse(name.len()));
+    candidates
+        .into_iter()
+        .find(|name| text_contains_safe_token(&normalized, &name.to_ascii_lowercase()))
+}
+
+fn resolve_referenced_test_filter(text: &str, package_names: &[String]) -> Option<String> {
+    extract_safe_quoted_tokens(text).into_iter().find(|token| {
+        is_safe_test_filter_token(token)
+            && !package_names
+                .iter()
+                .any(|package| package.eq_ignore_ascii_case(token))
+    })
+}
+
+fn text_contains_safe_token(text: &str, token: &str) -> bool {
+    text.split(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':')))
+        .any(|part| part == token)
+}
+
 fn extract_safe_docs_verifier_token(text: &str) -> Option<String> {
+    extract_safe_quoted_tokens(text)
+        .into_iter()
+        .find(|token| is_safe_docs_verifier_token(token))
+}
+
+fn extract_safe_quoted_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
     for delimiter in ['`', '"'] {
         let mut parts = text.split(delimiter);
         while let Some(_) = parts.next() {
@@ -2189,11 +2302,11 @@ fn extract_safe_docs_verifier_token(text: &str) -> Option<String> {
             };
             let token = candidate.trim();
             if is_safe_docs_verifier_token(token) {
-                return Some(token.to_string());
+                tokens.push(token.to_string());
             }
         }
     }
-    None
+    tokens
 }
 
 fn is_safe_docs_verifier_token(token: &str) -> bool {
@@ -2203,6 +2316,23 @@ fn is_safe_docs_verifier_token(token: &str) -> bool {
         && token
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':'))
+}
+
+fn is_safe_cargo_package_name(package_name: &str) -> bool {
+    let len = package_name.len();
+    (1..=96).contains(&len)
+        && !package_name.starts_with('-')
+        && package_name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+}
+
+fn is_safe_test_filter_token(token: &str) -> bool {
+    is_safe_docs_verifier_token(token)
+        && (token.contains("spec")
+            || token.contains("test")
+            || token.contains("::")
+            || token.starts_with("regression_"))
 }
 
 fn issue_intake_required_authority(
@@ -2240,6 +2370,7 @@ fn issue_intake_required_authority(
 }
 
 fn issue_intake_verifier_plan(
+    repo_path: &Path,
     title: &str,
     body: &str,
     classification: AutonomousCodingIssueIntakeClassification,
@@ -2338,13 +2469,18 @@ fn issue_intake_verifier_plan(
         _ if contains_any(
             &normalized,
             &["cli", "command", "flag", "argument", "subcommand"],
+        ) && !contains_any(
+            &normalized,
+            &["test", "panic", "rust", "crate", "compile", "clippy"],
         ) =>
         {
-            let mut commands = vec![
-                "cargo fmt --check".to_string(),
-                "cargo test -p tau-coding-agent --bin tau_autonomous_coding_job <focused-test>"
-                    .to_string(),
-            ];
+            let mut commands = derive_repo_aware_code_verifier_commands(repo_path, title, body);
+            if commands.is_empty() {
+                commands = vec![
+                    "cargo fmt --check".to_string(),
+                    "cargo test -p <affected-crate> <focused-test>".to_string(),
+                ];
+            }
             if normalized.contains("tau-unified") {
                 commands.push("scripts/run/test-tau-unified.sh".to_string());
             }
@@ -2363,15 +2499,21 @@ fn issue_intake_verifier_plan(
             &["test", "panic", "rust", "crate", "compile", "clippy"],
         ) =>
         {
+            let commands = derive_repo_aware_code_verifier_commands(repo_path, title, body);
+            let commands = if commands.is_empty() {
+                vec![
+                    "cargo fmt --check".to_string(),
+                    "cargo test -p <affected-crate> <focused-test>".to_string(),
+                    "cargo clippy -p <affected-crate> --lib --tests -- -D warnings".to_string(),
+                ]
+            } else {
+                commands
+            };
             AutonomousCodingVerifierPlan {
                 plan_kind: "rust".to_string(),
                 summary: "Rust issue should be verified with focused tests before broader checks."
                     .to_string(),
-                suggested_verifier_commands: vec![
-                    "cargo fmt --check".to_string(),
-                    "cargo test -p <affected-crate> <focused-test>".to_string(),
-                    "cargo clippy -p <affected-crate> --lib --tests -- -D warnings".to_string(),
-                ],
+                suggested_verifier_commands: commands,
                 missing_inputs,
                 next_action:
                     "Provide the affected crate/test target or approve Tau's focused verifier plan."
@@ -3612,6 +3754,184 @@ mod tests {
         assert!(outcome.run.is_none());
     }
 
+    #[tokio::test]
+    async fn spec_3810_c01_issue_to_merge_derives_repo_aware_rust_verifier() {
+        let fixture = CodingJobFixture::new();
+        fixture.install_rust_workspace_fixture("fail");
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair(
+            r#"{"files":{"crates/fixture-cli/src/lib.rs":"pub fn marker() -> &'static str {\n    \"pass\"\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn spec_3810_repo_aware_verifier() {\n        assert_eq!(marker(), \"pass\");\n    }\n}\n"},"reason_code":"provider_rust_fix"}"#,
+            0,
+        );
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3810-repo-aware-rust".to_string(),
+                mission_id: "issue-3810-repo-aware-rust-mission".to_string(),
+                session_key: "issue-3810-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3810".to_string(),
+                issue_title: "Fix fixture-cli Rust test `spec_3810_repo_aware_verifier`"
+                    .to_string(),
+                issue_body: "The fixture-cli crate has a failing Rust test named `spec_3810_repo_aware_verifier`; use the real package and focused test filter."
+                    .to_string(),
+                goal: "Let Tau derive the focused Rust verifier from repo metadata.".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-to-merge-repo-aware-rust-".to_string(),
+                verifier_commands: Vec::new(),
+                pr_mode: CodingMissionPrMode::PrReady,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: Vec::new(),
+                provider_repair: provider.policy(2, "fake-provider", "repair-model"),
+                commit_message: "Fix repo-aware Rust verifier fixture".to_string(),
+                timeout_ms: Some(10_000),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: false,
+                github_env: BTreeMap::new(),
+                gh_binary: None,
+                started_unix_ms: 14_000,
+            })
+            .await
+            .expect("issue-to-merge repo-aware Rust verifier");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::PrReady);
+        let intake = outcome.intake.as_ref().expect("derived intake");
+        assert_eq!(
+            intake.decision,
+            AutonomousCodingIssueIntakeDecision::ReadyToRun
+        );
+        assert_eq!(intake.verifier_plan.plan_kind, "rust");
+        assert!(intake
+            .verifier_plan
+            .suggested_verifier_commands
+            .iter()
+            .any(|command| command == "cargo test -p fixture-cli spec_3810_repo_aware_verifier"));
+
+        let submit = outcome.submit.as_ref().expect("submit");
+        assert!(submit
+            .record
+            .verifier_commands
+            .iter()
+            .any(|command| command == "cargo test -p fixture-cli spec_3810_repo_aware_verifier"));
+        let run = outcome.run.as_ref().expect("run");
+        assert_eq!(run.status.status, AutonomousCodingJobStatus::PrReady);
+        assert!(run
+            .status
+            .changed_files
+            .iter()
+            .any(|file| file == "crates/fixture-cli/src/lib.rs"));
+    }
+
+    #[tokio::test]
+    async fn spec_3810_c02_issue_to_merge_blocks_without_concrete_test_filter() {
+        let fixture = CodingJobFixture::new();
+        fixture.install_rust_workspace_fixture("fail");
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair(
+            r#"{"files":{"crates/fixture-cli/src/lib.rs":"pub fn marker() -> &'static str {\n    \"pass\"\n}\n"},"reason_code":"provider_rust_fix"}"#,
+            0,
+        );
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3810-missing-test-filter".to_string(),
+                mission_id: "issue-3810-missing-test-filter-mission".to_string(),
+                session_key: "issue-3810-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3810".to_string(),
+                issue_title: "Fix fixture-cli Rust failure".to_string(),
+                issue_body: "The fixture-cli crate has a failing Rust test, but no exact test filter was provided."
+                    .to_string(),
+                goal: "Should not derive a vague Rust verifier.".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-to-merge-missing-filter-".to_string(),
+                verifier_commands: Vec::new(),
+                pr_mode: CodingMissionPrMode::PrReady,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: Vec::new(),
+                provider_repair: provider.policy(2, "fake-provider", "repair-model"),
+                commit_message: "Should not be used".to_string(),
+                timeout_ms: Some(10_000),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: false,
+                github_env: BTreeMap::new(),
+                gh_binary: None,
+                started_unix_ms: 15_000,
+            })
+            .await
+            .expect("issue-to-merge blocks without exact test filter");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::Blocked);
+        let intake = outcome.intake.as_ref().expect("blocked intake");
+        assert_eq!(
+            intake.classification,
+            AutonomousCodingIssueIntakeClassification::MissingVerifier
+        );
+        assert!(intake
+            .required_authority
+            .iter()
+            .any(|authority| authority.reason_code == "verifier_authority_required"));
+        assert!(outcome.submit.is_none());
+        assert!(outcome.run.is_none());
+    }
+
+    #[tokio::test]
+    async fn spec_3810_c03_issue_to_merge_blocks_when_package_is_not_in_metadata() {
+        let fixture = CodingJobFixture::new();
+        fixture.install_rust_workspace_fixture("fail");
+        let runtime = fixture.runtime_without_background();
+        let provider = fixture.fake_provider_repair(
+            r#"{"files":{"crates/missing-crate/src/lib.rs":"pub fn marker() -> &'static str {\n    \"pass\"\n}\n"},"reason_code":"provider_rust_fix"}"#,
+            0,
+        );
+
+        let outcome = runtime
+            .run_issue_to_merge(AutonomousCodingIssueToMergeRequest {
+                intake_id: "issue-3810-missing-package".to_string(),
+                mission_id: "issue-3810-missing-package-mission".to_string(),
+                session_key: "issue-3810-session".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                issue_url: "https://github.com/njfio/Tau/issues/3810".to_string(),
+                issue_title: "Fix missing-crate Rust test `spec_3810_repo_aware_verifier`"
+                    .to_string(),
+                issue_body: "The missing-crate package has a failing Rust test named `spec_3810_repo_aware_verifier`, but that package is not in cargo metadata."
+                    .to_string(),
+                goal: "Should not derive a verifier for an unresolved package.".to_string(),
+                base_branch: "master".to_string(),
+                branch_prefix: "codex/issue-to-merge-missing-package-".to_string(),
+                verifier_commands: Vec::new(),
+                pr_mode: CodingMissionPrMode::PrReady,
+                allowed_roots: vec![fixture.repo.path().to_path_buf()],
+                controlled_edits: Vec::new(),
+                provider_repair: provider.policy(2, "fake-provider", "repair-model"),
+                commit_message: "Should not be used".to_string(),
+                timeout_ms: Some(10_000),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: false,
+                github_env: BTreeMap::new(),
+                gh_binary: None,
+                started_unix_ms: 16_000,
+            })
+            .await
+            .expect("issue-to-merge blocks when package is not in metadata");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueToMergeStatus::Blocked);
+        let intake = outcome.intake.as_ref().expect("blocked intake");
+        assert_eq!(
+            intake.classification,
+            AutonomousCodingIssueIntakeClassification::MissingVerifier
+        );
+        assert!(intake
+            .required_authority
+            .iter()
+            .any(|authority| authority.reason_code == "verifier_authority_required"));
+        assert!(outcome.submit.is_none());
+        assert!(outcome.run.is_none());
+    }
+
     struct CodingJobFixture {
         root: TempDir,
         repo: TempDir,
@@ -3701,6 +4021,33 @@ mod tests {
                     reason_code: "controlled_notes_fix".to_string(),
                 },
             ]
+        }
+
+        fn install_rust_workspace_fixture(&self, marker: &str) {
+            std::fs::create_dir_all(self.repo.path().join("crates/fixture-cli/src"))
+                .expect("fixture crate dir");
+            std::fs::write(
+                self.repo.path().join("Cargo.toml"),
+                "[workspace]\nmembers = [\"crates/fixture-cli\"]\nresolver = \"2\"\n",
+            )
+            .expect("workspace cargo toml");
+            std::fs::write(
+                self.repo.path().join("crates/fixture-cli/Cargo.toml"),
+                "[package]\nname = \"fixture-cli\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            )
+            .expect("fixture cargo toml");
+            std::fs::write(
+                self.repo.path().join("crates/fixture-cli/src/lib.rs"),
+                format!(
+                    "pub fn marker() -> &'static str {{\n    \"{marker}\"\n}}\n\n#[cfg(test)]\nmod tests {{\n    use super::*;\n\n    #[test]\n    fn spec_3810_repo_aware_verifier() {{\n        assert_eq!(marker(), \"pass\");\n    }}\n}}\n"
+                ),
+            )
+            .expect("fixture lib");
+            git(self.repo.path(), &["add", "."]);
+            git(
+                self.repo.path(),
+                &["commit", "-m", "Add Rust workspace fixture"],
+            );
         }
 
         fn fake_gh(&self, stdout: &str, exit_code: i32) -> FakeGh {
