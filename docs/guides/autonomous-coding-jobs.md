@@ -296,6 +296,10 @@ For repo-aware Rust or CLI verifier planning, blocked records distinguish
 between a missing real Cargo package token and a missing exact safe test filter.
 That means an operator can supply the one missing ingredient instead of
 rewriting the whole verifier plan.
+Those repo-aware gaps are also exposed as stable clarifying question reason
+codes: `repo_aware_cargo_package` asks for an actual Cargo package present in
+`cargo metadata`, and `repo_aware_test_filter` asks for an exact quoted or
+backticked safe test filter token.
 
 Intake records also expose a queue-friendly clarifying contract:
 

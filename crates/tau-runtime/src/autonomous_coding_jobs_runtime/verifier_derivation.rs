@@ -6,6 +6,13 @@ pub(super) struct RepoAwareVerifierDerivation {
     pub missing_inputs: Vec<String>,
 }
 
+pub(super) const REPO_AWARE_CARGO_METADATA_REQUIRED_INPUT: &str =
+    "Cargo workspace package metadata from `cargo metadata`";
+pub(super) const REPO_AWARE_CARGO_PACKAGE_REQUIRED_PREFIX: &str =
+    "actual Cargo package name present in this repository";
+pub(super) const REPO_AWARE_TEST_FILTER_REQUIRED_INPUT: &str =
+    "exact quoted/backticked safe test filter token containing `spec`, `test`, `::`, or starting with `regression_`";
+
 pub(super) fn derive_concrete_docs_verifier_commands(title: &str, body: &str) -> Vec<String> {
     let combined = format!("{title}\n{body}");
     let normalized = combined.to_ascii_lowercase();
@@ -79,10 +86,7 @@ pub(super) fn derive_repo_aware_code_verifier_plan(
         missing_inputs.push(missing_package_input(&package_names));
     }
     if test_filter.is_none() {
-        missing_inputs.push(
-            "exact quoted/backticked safe test filter token containing `spec`, `test`, `::`, or starting with `regression_`"
-                .to_string(),
-        );
+        missing_inputs.push(REPO_AWARE_TEST_FILTER_REQUIRED_INPUT.to_string());
     }
 
     let commands = match (package_name, test_filter) {
@@ -200,10 +204,10 @@ fn is_safe_test_filter_token(token: &str) -> bool {
 
 fn missing_package_input(package_names: &[String]) -> String {
     if package_names.is_empty() {
-        return "Cargo workspace package metadata from `cargo metadata`".to_string();
+        return REPO_AWARE_CARGO_METADATA_REQUIRED_INPUT.to_string();
     }
     format!(
-        "actual Cargo package name present in this repository (available: {})",
+        "{REPO_AWARE_CARGO_PACKAGE_REQUIRED_PREFIX} (available: {})",
         package_sample(package_names)
     )
 }

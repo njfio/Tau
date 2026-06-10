@@ -34,7 +34,8 @@ mod verifier_derivation;
 
 use verifier_derivation::{
     derive_concrete_docs_verifier_commands, derive_concrete_verifier_commands,
-    derive_repo_aware_code_verifier_plan,
+    derive_repo_aware_code_verifier_plan, REPO_AWARE_CARGO_METADATA_REQUIRED_INPUT,
+    REPO_AWARE_CARGO_PACKAGE_REQUIRED_PREFIX, REPO_AWARE_TEST_FILTER_REQUIRED_INPUT,
 };
 
 pub const AUTONOMOUS_CODING_JOB_SCHEMA_VERSION: u32 = 1;
@@ -1018,8 +1019,11 @@ impl AutonomousCodingJobRuntime {
             context,
         );
         let decision = issue_intake_decision(classification.classification);
-        let clarifying_questions =
-            issue_intake_clarifying_questions(classification.classification, context);
+        let clarifying_questions = issue_intake_clarifying_questions(
+            classification.classification,
+            context,
+            &verifier_plan,
+        );
         let missing_inputs = verifier_plan.missing_inputs.clone();
         let next_action_summary = verifier_plan.next_action.clone();
         let outcome = AutonomousCodingIssueIntakeOutcome {
@@ -2083,6 +2087,7 @@ fn issue_intake_decision(
 fn issue_intake_clarifying_questions(
     classification: AutonomousCodingIssueIntakeClassification,
     context: IssueIntakeAuthorityContext,
+    verifier_plan: &AutonomousCodingVerifierPlan,
 ) -> Vec<AutonomousCodingIssueClarifyingQuestion> {
     match classification {
         AutonomousCodingIssueIntakeClassification::Unsafe => vec![intake_question(
@@ -2139,6 +2144,7 @@ fn issue_intake_clarifying_questions(
                     "Which exact command should Tau run to prove the fix before mutation?",
                     "--verifier-command or spec-derived test command",
                 ));
+                append_repo_aware_verifier_questions(&mut questions, verifier_plan);
             }
             if !context.has_edit_or_provider_authority {
                 questions.push(intake_question(
@@ -2158,6 +2164,47 @@ fn issue_intake_clarifying_questions(
         }
         AutonomousCodingIssueIntakeClassification::Ready
         | AutonomousCodingIssueIntakeClassification::Solvable => Vec::new(),
+    }
+}
+
+fn append_repo_aware_verifier_questions(
+    questions: &mut Vec<AutonomousCodingIssueClarifyingQuestion>,
+    verifier_plan: &AutonomousCodingVerifierPlan,
+) {
+    for missing_input in &verifier_plan.missing_inputs {
+        if missing_input == REPO_AWARE_TEST_FILTER_REQUIRED_INPUT {
+            push_unique_intake_question(
+                questions,
+                intake_question(
+                    "repo_aware_test_filter",
+                    "Which exact quoted or backticked safe test filter should Tau use for the focused Cargo verifier?",
+                    missing_input,
+                ),
+            );
+        } else if missing_input == REPO_AWARE_CARGO_METADATA_REQUIRED_INPUT
+            || missing_input.starts_with(REPO_AWARE_CARGO_PACKAGE_REQUIRED_PREFIX)
+        {
+            push_unique_intake_question(
+                questions,
+                intake_question(
+                    "repo_aware_cargo_package",
+                    "Which actual Cargo package from this repository should Tau verify?",
+                    missing_input,
+                ),
+            );
+        }
+    }
+}
+
+fn push_unique_intake_question(
+    questions: &mut Vec<AutonomousCodingIssueClarifyingQuestion>,
+    question: AutonomousCodingIssueClarifyingQuestion,
+) {
+    if !questions
+        .iter()
+        .any(|existing| existing.reason_code == question.reason_code)
+    {
+        questions.push(question);
     }
 }
 
