@@ -292,6 +292,11 @@ so a vague or no-authority issue becomes a concrete contract instead of a generi
 failure. These plans are intentionally not mutation authority; Tau still blocks
 until a verifier and edit/provider authority are supplied.
 
+For repo-aware Rust or CLI verifier planning, blocked records distinguish
+between a missing real Cargo package token and a missing exact safe test filter.
+That means an operator can supply the one missing ingredient instead of
+rewriting the whole verifier plan.
+
 Intake records also expose a queue-friendly clarifying contract:
 
 - `decision`: `ready_to_run`, `needs_authority`, `needs_clarification`,

@@ -1,5 +1,11 @@
 use std::{path::Path, process::Command};
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct RepoAwareVerifierDerivation {
+    pub commands: Vec<String>,
+    pub missing_inputs: Vec<String>,
+}
+
 pub(super) fn derive_concrete_docs_verifier_commands(title: &str, body: &str) -> Vec<String> {
     let combined = format!("{title}\n{body}");
     let normalized = combined.to_ascii_lowercase();
@@ -36,6 +42,14 @@ pub(super) fn derive_repo_aware_code_verifier_commands(
     title: &str,
     body: &str,
 ) -> Vec<String> {
+    derive_repo_aware_code_verifier_plan(repo_path, title, body).commands
+}
+
+pub(super) fn derive_repo_aware_code_verifier_plan(
+    repo_path: &Path,
+    title: &str,
+    body: &str,
+) -> RepoAwareVerifierDerivation {
     let combined = format!("{title}\n{body}");
     let normalized = combined.to_ascii_lowercase();
     if !contains_any(
@@ -54,22 +68,33 @@ pub(super) fn derive_repo_aware_code_verifier_commands(
             "clippy",
         ],
     ) {
-        return Vec::new();
+        return RepoAwareVerifierDerivation::default();
     }
 
     let package_names = repo_cargo_package_names(repo_path);
-    let Some(package_name) = resolve_referenced_package_name(&package_names, &combined) else {
-        return Vec::new();
-    };
-    if !is_safe_cargo_package_name(&package_name) {
-        return Vec::new();
+    let package_name = resolve_referenced_package_name(&package_names, &combined);
+    let test_filter = resolve_referenced_test_filter(&combined, &package_names);
+    let mut missing_inputs = Vec::new();
+    if package_name.is_none() {
+        missing_inputs.push(missing_package_input(&package_names));
+    }
+    if test_filter.is_none() {
+        missing_inputs.push(
+            "exact quoted/backticked safe test filter token containing `spec`, `test`, `::`, or starting with `regression_`"
+                .to_string(),
+        );
     }
 
-    let Some(test_filter) = resolve_referenced_test_filter(&combined, &package_names) else {
-        return Vec::new();
+    let commands = match (package_name, test_filter) {
+        (Some(package_name), Some(test_filter)) if is_safe_cargo_package_name(&package_name) => {
+            vec![format!("cargo test -p {package_name} {test_filter}")]
+        }
+        _ => Vec::new(),
     };
-
-    vec![format!("cargo test -p {package_name} {test_filter}")]
+    RepoAwareVerifierDerivation {
+        commands,
+        missing_inputs,
+    }
 }
 
 fn repo_cargo_package_names(repo_path: &Path) -> Vec<String> {
@@ -171,6 +196,29 @@ fn is_safe_test_filter_token(token: &str) -> bool {
             || token.contains("test")
             || token.contains("::")
             || token.starts_with("regression_"))
+}
+
+fn missing_package_input(package_names: &[String]) -> String {
+    if package_names.is_empty() {
+        return "Cargo workspace package metadata from `cargo metadata`".to_string();
+    }
+    format!(
+        "actual Cargo package name present in this repository (available: {})",
+        package_sample(package_names)
+    )
+}
+
+fn package_sample(package_names: &[String]) -> String {
+    const MAX_PACKAGE_SAMPLE: usize = 5;
+    let mut sample = package_names
+        .iter()
+        .take(MAX_PACKAGE_SAMPLE)
+        .cloned()
+        .collect::<Vec<_>>();
+    if package_names.len() > MAX_PACKAGE_SAMPLE {
+        sample.push("...".to_string());
+    }
+    sample.join(", ")
 }
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {
