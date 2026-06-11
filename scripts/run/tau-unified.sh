@@ -44,6 +44,8 @@ Commands:
   job      Inspect one autonomous coding job and its evidence.
   intakes  List autonomous coding issue-intake decisions.
   intake   Inspect one autonomous coding issue-intake decision.
+  intake-run
+           Run issue-to-merge from a persisted intake after authority is supplied.
   recover  Recover stuck autonomous coding/background jobs.
   replay   Replay one autonomous coding job checkpoint.
   block    Mark one autonomous coding job blocked after operator inspection.
@@ -1339,6 +1341,48 @@ for question in intake.get("clarifying_questions") or []:
 PY
 }
 
+cmd_intake_run() {
+  local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
+  local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
+  local intake_id=""
+  local passthrough=()
+  if [[ $# -gt 0 && "$1" != --* ]]; then
+    intake_id="$1"
+    shift
+  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir|--autonomous-coding-state-dir)
+        autonomous_coding_state_dir="$2"
+        shift 2
+        ;;
+      --jobs-state-dir)
+        jobs_state_dir="$2"
+        shift 2
+        ;;
+      --intake-id)
+        intake_id="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        passthrough+=("$1")
+        shift
+        ;;
+    esac
+  done
+  [[ -n "${intake_id}" ]] || die "intake-run requires <intake-id> or --intake-id"
+  log "tau-unified: autonomous_coding.intake_run.intake_id=${intake_id}"
+  run_autonomous_coding_job_cli intake-run \
+    --state-dir "${autonomous_coding_state_dir}" \
+    --jobs-state-dir "${jobs_state_dir}" \
+    --intake-id "${intake_id}" \
+    "${passthrough[@]}"
+}
+
 cmd_recover_jobs() {
   local autonomous_coding_state_dir="${AUTONOMOUS_CODING_STATE_DIR_DEFAULT}"
   local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
@@ -1784,6 +1828,9 @@ case "${command}" in
     ;;
   intake)
     cmd_intake "$@"
+    ;;
+  intake-run)
+    cmd_intake_run "$@"
     ;;
   recover)
     cmd_recover_jobs "$@"

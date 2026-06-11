@@ -632,6 +632,29 @@ printf '{"fake_cli":true,"command":"%s"}\n' "${1:-none}"
 EOF
   chmod +x "${fake_cli}"
 
+  local intake_run_output
+  intake_run_output="$(
+    TAU_UNIFIED_AUTONOMOUS_CODING_JOB_CLI="${fake_cli}" \
+    TAU_FAKE_AUTONOMOUS_CODING_JOB_ARGS="${fake_cli_args}" \
+    "${LAUNCHER_SCRIPT}" intake-run issue-3807-intake-rerun-command \
+      --autonomous-coding-state-dir "${test_autonomous_coding_state_dir}" \
+      --jobs-state-dir "${test_jobs_state_dir}" \
+      --provider-repair-openrouter \
+      --provider-repair-attempts 3 \
+      --commit-message "Resolve fixture intake" 2>&1
+  )"
+  assert_contains "${intake_run_output}" "tau-unified: autonomous_coding.intake_run.intake_id=issue-3807-intake-rerun-command" "intake-run marker"
+  assert_contains "${intake_run_output}" '"command":"intake-run"' "intake-run json"
+  assert_contains "$(cat "${fake_cli_args}")" "intake-run" "intake-run delegates command"
+  assert_contains "$(cat "${fake_cli_args}")" "--state-dir" "intake-run delegates state flag"
+  assert_contains "$(cat "${fake_cli_args}")" "${test_autonomous_coding_state_dir}" "intake-run delegates state dir"
+  assert_contains "$(cat "${fake_cli_args}")" "--jobs-state-dir" "intake-run delegates jobs flag"
+  assert_contains "$(cat "${fake_cli_args}")" "${test_jobs_state_dir}" "intake-run delegates jobs dir"
+  assert_contains "$(cat "${fake_cli_args}")" "--intake-id" "intake-run delegates intake flag"
+  assert_contains "$(cat "${fake_cli_args}")" "issue-3807-intake-rerun-command" "intake-run delegates intake id"
+  assert_contains "$(cat "${fake_cli_args}")" "--provider-repair-openrouter" "intake-run delegates provider flag"
+  assert_contains "$(cat "${fake_cli_args}")" "Resolve fixture intake" "intake-run delegates commit message"
+
   local recover_output
   recover_output="$(
     TAU_UNIFIED_AUTONOMOUS_CODING_JOB_CLI="${fake_cli}" \

@@ -325,6 +325,36 @@ and verifier command, and adds built-in OpenRouter provider-repair authority in
 draft PR mode. Vague, unsafe, broad, missing-verifier, legacy, or placeholder
 verifier records print `rerun_command=none`.
 
+To turn that persisted intake into the actual authorized run without copying the
+issue fields back into a long command, use `intake-run`:
+
+```bash
+scripts/run/tau-unified.sh intake-run issue-123 \
+  --provider-repair-openrouter \
+  --provider-repair-attempts 3 \
+  --commit-message "Make verifier green"
+```
+
+The direct binary surface is the same durable issue-to-merge loop:
+
+```bash
+OPENROUTER_API_KEY=... cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- intake-run \
+  --state-dir .tau/autonomous-coding \
+  --jobs-state-dir .tau/jobs \
+  --intake-id issue-123 \
+  --provider-repair-openrouter \
+  --provider-repair-attempts 3 \
+  --commit-message "Make verifier green"
+```
+
+`intake-run` loads the stored issue URL, title, body, repo path, base branch,
+and concrete verifier command from the intake record, then delegates to the
+normal durable job path. It only runs intakes classified as `needs_authority` or
+`ready_to_run`, requires either controlled `--edit` authority or provider-repair
+authority, and refuses vague, unsafe, over-broad, missing-credential, legacy, or
+placeholder-verifier records. If the stored verifier plan is still a template,
+the operator must pass an explicit concrete `--verifier-command`.
+
 Draft PR behavior is evidence-backed. In draft mode Tau checks for an existing
 PR for the job branch, updates it when found, creates a draft PR when GitHub auth
 and `gh` are available, and records stdout/stderr/exit status in the mission
