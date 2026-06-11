@@ -10,12 +10,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 use tau_agent_core::{CodingMissionControlledEdit, CodingMissionPrMode};
 use tau_runtime::{
-    AutonomousCodingAutoMergeRequest, AutonomousCodingIssueIntakeRequest,
+    AutonomousCodingAutoMergeRequest, AutonomousCodingIssueIntakeDecision,
+    AutonomousCodingIssueIntakeOutcome, AutonomousCodingIssueIntakeRequest,
     AutonomousCodingIssueToMergeRequest, AutonomousCodingJobMarkBlockedRequest,
     AutonomousCodingJobReplayRequest, AutonomousCodingJobRuntime, AutonomousCodingJobRuntimeConfig,
     AutonomousCodingJobSubmitRequest, AutonomousCodingMergeMethod,
@@ -55,6 +56,8 @@ enum Command {
     IntakeIssue(Box<IssueIntakeArgs>),
     /// Emit a persisted issue-intake authority plan.
     IntakeStatus(Box<IssueIntakeStatusArgs>),
+    /// Run issue-to-merge from a persisted intake after authority is supplied.
+    IntakeRun(Box<IssueIntakeRunArgs>),
     /// Run issue intake through PR-ready output and optional guarded auto-merge.
     IssueToMerge(Box<IssueToMergeArgs>),
     /// Built-in OpenRouter repair adapter for durable coding jobs.
@@ -196,6 +199,47 @@ struct IssueIntakeStatusArgs {
     runtime: RuntimeArgs,
     #[arg(long)]
     intake_id: String,
+}
+
+#[derive(Debug, Parser)]
+struct IssueIntakeRunArgs {
+    #[command(flatten)]
+    runtime: RuntimeArgs,
+    #[command(flatten)]
+    provider_repair: ProviderRepairArgs,
+
+    #[arg(long)]
+    intake_id: String,
+    #[arg(long)]
+    mission_id: Option<String>,
+    #[arg(long, default_value = "local-session")]
+    session_key: String,
+    #[arg(long)]
+    goal: Option<String>,
+    #[arg(long, default_value = "codex/autonomous-coding-job-")]
+    branch_prefix: String,
+    #[arg(long = "verifier-command")]
+    verifier_commands: Vec<String>,
+    #[arg(long = "allowed-root")]
+    allowed_roots: Vec<PathBuf>,
+    #[arg(long = "edit")]
+    edits: Vec<String>,
+    #[arg(long)]
+    commit_message: Option<String>,
+    #[arg(long, value_enum, default_value = "draft")]
+    pr_mode: PrModeArg,
+    #[arg(long)]
+    timeout_ms: Option<u64>,
+    #[arg(long)]
+    allow_auto_merge: bool,
+    #[arg(long, value_enum, default_value = "squash")]
+    merge_method: MergeMethodArg,
+    #[arg(long)]
+    delete_branch: bool,
+    #[arg(long)]
+    gh_binary: Option<PathBuf>,
+    #[arg(long)]
+    started_unix_ms: Option<u64>,
 }
 
 #[derive(Debug, Parser)]
@@ -448,6 +492,12 @@ async fn run(args: Args) -> Result<()> {
             let outcome = runtime.issue_intake_status(args.intake_id.as_str())?;
             print_json(&outcome)?;
         }
+        Command::IntakeRun(args) => {
+            let args = *args;
+            let runtime = runtime_from_args(&args.runtime)?;
+            let outcome = run_intake_run(&runtime, args).await?;
+            print_json(&outcome)?;
+        }
         Command::IssueToMerge(args) => {
             let args = *args;
             let runtime = runtime_from_args(&args.runtime)?;
@@ -542,6 +592,137 @@ fn parse_edits(raw_edits: &[String]) -> Result<Vec<CodingMissionControlledEdit>>
             })
         })
         .collect()
+}
+
+async fn run_intake_run(
+    runtime: &AutonomousCodingJobRuntime,
+    args: IssueIntakeRunArgs,
+) -> Result<tau_runtime::AutonomousCodingIssueToMergeOutcome> {
+    let intake = runtime.issue_intake_status(args.intake_id.as_str())?;
+    let request = build_intake_run_request(intake, args)?;
+    runtime.run_issue_to_merge(request).await
+}
+
+fn build_intake_run_request(
+    intake: AutonomousCodingIssueIntakeOutcome,
+    args: IssueIntakeRunArgs,
+) -> Result<AutonomousCodingIssueToMergeRequest> {
+    let controlled_edits = parse_edits(&args.edits)?;
+    let provider_repair = provider_repair_policy(&args.provider_repair)?;
+    if controlled_edits.is_empty() && !provider_repair.is_configured() {
+        bail!("intake-run requires --edit or provider repair authority");
+    }
+    let verifier_commands = intake_run_verifier_commands(&intake, &args.verifier_commands)?;
+    let issue_body = intake.issue_body.trim();
+    if issue_body.is_empty() {
+        bail!("intake-run requires persisted issue_body; rerun intake first");
+    }
+    let issue_url = intake.issue_url.trim();
+    if issue_url.is_empty() {
+        bail!("intake-run requires persisted issue_url");
+    }
+    let issue_title = intake.issue_title.trim();
+    if issue_title.is_empty() {
+        bail!("intake-run requires persisted issue_title");
+    }
+    if intake.repo_path.as_os_str().is_empty() {
+        bail!("intake-run requires persisted repo_path");
+    }
+    ensure_intake_run_decision(&intake)?;
+
+    let repo_path = intake.repo_path.clone();
+    let allowed_roots = if args.allowed_roots.is_empty() {
+        vec![repo_path.clone()]
+    } else {
+        args.allowed_roots
+    };
+    let goal = args
+        .goal
+        .unwrap_or_else(|| format!("{}\n\n{}", issue_title, issue_body));
+    let commit_message = args
+        .commit_message
+        .unwrap_or_else(|| format!("Resolve {}", issue_title));
+    let mission_id = args
+        .mission_id
+        .unwrap_or_else(|| format!("{}-mission", intake.intake_id));
+
+    Ok(AutonomousCodingIssueToMergeRequest {
+        intake_id: intake.intake_id,
+        mission_id,
+        session_key: args.session_key,
+        repo_path,
+        issue_url: issue_url.to_string(),
+        issue_title: issue_title.to_string(),
+        issue_body: issue_body.to_string(),
+        goal,
+        base_branch: intake.base_branch,
+        branch_prefix: args.branch_prefix,
+        verifier_commands,
+        pr_mode: args.pr_mode.into(),
+        allowed_roots,
+        controlled_edits,
+        provider_repair,
+        commit_message,
+        timeout_ms: args.timeout_ms,
+        allow_auto_merge: args.allow_auto_merge,
+        merge_method: args.merge_method.into(),
+        delete_branch: args.delete_branch,
+        github_env: github_env_from_process(),
+        gh_binary: args.gh_binary,
+        started_unix_ms: args.started_unix_ms.unwrap_or_else(now_unix_ms),
+    })
+}
+
+fn ensure_intake_run_decision(intake: &AutonomousCodingIssueIntakeOutcome) -> Result<()> {
+    match intake.decision {
+        AutonomousCodingIssueIntakeDecision::NeedsAuthority
+        | AutonomousCodingIssueIntakeDecision::ReadyToRun => Ok(()),
+        AutonomousCodingIssueIntakeDecision::NeedsClarification => {
+            bail!("intake-run refuses needs_clarification intake")
+        }
+        AutonomousCodingIssueIntakeDecision::SplitRequired => {
+            bail!("intake-run refuses split_required intake")
+        }
+        AutonomousCodingIssueIntakeDecision::BlockedUnsafe => {
+            bail!("intake-run refuses blocked_unsafe intake")
+        }
+        AutonomousCodingIssueIntakeDecision::MissingCredentials => {
+            bail!("intake-run refuses missing_credentials intake")
+        }
+        AutonomousCodingIssueIntakeDecision::Unknown => {
+            bail!("intake-run refuses unknown legacy intake")
+        }
+    }
+}
+
+fn intake_run_verifier_commands(
+    intake: &AutonomousCodingIssueIntakeOutcome,
+    explicit: &[String],
+) -> Result<Vec<String>> {
+    let mut commands = explicit
+        .iter()
+        .map(|command| command.trim())
+        .filter(|command| !command.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if commands.is_empty() {
+        commands = intake
+            .verifier_plan
+            .suggested_verifier_commands
+            .iter()
+            .map(|command| command.trim())
+            .filter(|command| is_concrete_verifier_command(command))
+            .map(str::to_string)
+            .collect();
+    }
+    if commands.is_empty() {
+        bail!("intake-run requires a concrete --verifier-command or persisted verifier command");
+    }
+    Ok(commands)
+}
+
+fn is_concrete_verifier_command(command: &str) -> bool {
+    !command.is_empty() && !command.contains('<') && !command.contains('>')
 }
 
 fn provider_repair_policy(
@@ -653,6 +834,196 @@ impl From<MergeMethodArg> for AutonomousCodingMergeMethod {
             MergeMethodArg::Merge => Self::Merge,
             MergeMethodArg::Squash => Self::Squash,
             MergeMethodArg::Rebase => Self::Rebase,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tau_runtime::{
+        AutonomousCodingIssueClarifyingQuestion, AutonomousCodingIssueIntakeClassification,
+        AutonomousCodingIssueIntakeStatus, AutonomousCodingVerifierPlan,
+    };
+
+    #[test]
+    fn spec_3809_intake_run_uses_concrete_persisted_verifier() {
+        let intake = intake_fixture(
+            AutonomousCodingIssueIntakeDecision::NeedsAuthority,
+            "Fix concrete verifier",
+            "Issue body",
+            vec!["cargo test -p fixture-cli spec_3809_intake_run"],
+        );
+
+        let commands = intake_run_verifier_commands(&intake, &[]).expect("verifier commands");
+
+        assert_eq!(
+            commands,
+            vec!["cargo test -p fixture-cli spec_3809_intake_run"]
+        );
+    }
+
+    #[test]
+    fn spec_3809_intake_run_uses_explicit_verifier_answer() {
+        let intake = intake_fixture(
+            AutonomousCodingIssueIntakeDecision::NeedsAuthority,
+            "Fix missing verifier",
+            "Issue body",
+            vec!["cargo test -p <affected-crate> <focused-test>"],
+        );
+
+        let commands = intake_run_verifier_commands(
+            &intake,
+            &["cargo test -p tau-runtime spec_3809".to_string()],
+        )
+        .expect("explicit verifier");
+
+        assert_eq!(commands, vec!["cargo test -p tau-runtime spec_3809"]);
+    }
+
+    #[test]
+    fn spec_3809_intake_run_builds_issue_to_merge_request_from_persisted_intake() {
+        let intake = intake_fixture(
+            AutonomousCodingIssueIntakeDecision::NeedsAuthority,
+            "Fix persisted issue",
+            "Persisted issue body",
+            vec!["cargo test -p tau-coding-agent spec_3809"],
+        );
+        let request = build_intake_run_request(
+            intake,
+            IssueIntakeRunArgs {
+                runtime: RuntimeArgs {
+                    state_dir: PathBuf::from(".tau/autonomous-coding"),
+                    jobs_state_dir: PathBuf::from(".tau/jobs"),
+                    runner_command: None,
+                },
+                provider_repair: provider_repair_args_fixture(),
+                intake_id: "issue-3809-intake-run".to_string(),
+                mission_id: None,
+                session_key: "session-3809".to_string(),
+                goal: None,
+                branch_prefix: "codex/intake-run-".to_string(),
+                verifier_commands: Vec::new(),
+                allowed_roots: Vec::new(),
+                edits: vec!["src/lib.rs=updated contents\n".to_string()],
+                commit_message: None,
+                pr_mode: PrModeArg::Draft,
+                timeout_ms: Some(30_000),
+                allow_auto_merge: false,
+                merge_method: MergeMethodArg::Squash,
+                delete_branch: false,
+                gh_binary: None,
+                started_unix_ms: Some(3_809),
+            },
+        )
+        .expect("request");
+
+        assert_eq!(request.intake_id, "issue-3809-intake-run");
+        assert_eq!(request.mission_id, "issue-3809-intake-run-mission");
+        assert_eq!(request.session_key, "session-3809");
+        assert_eq!(request.repo_path, PathBuf::from("/tmp/tau-fixture"));
+        assert_eq!(request.issue_title, "Fix persisted issue");
+        assert_eq!(request.issue_body, "Persisted issue body");
+        assert_eq!(request.goal, "Fix persisted issue\n\nPersisted issue body");
+        assert_eq!(
+            request.verifier_commands,
+            vec!["cargo test -p tau-coding-agent spec_3809"]
+        );
+        assert_eq!(
+            request.allowed_roots,
+            vec![PathBuf::from("/tmp/tau-fixture")]
+        );
+        assert_eq!(request.pr_mode, CodingMissionPrMode::Draft);
+        assert_eq!(request.controlled_edits.len(), 1);
+        assert_eq!(
+            request.controlled_edits[0].relative_path,
+            PathBuf::from("src/lib.rs")
+        );
+        assert_eq!(request.controlled_edits[0].contents, "updated contents\n");
+        assert_eq!(request.commit_message, "Resolve Fix persisted issue");
+        assert_eq!(request.started_unix_ms, 3_809);
+        assert!(!request.provider_repair.is_configured());
+    }
+
+    #[test]
+    fn spec_3809_intake_run_rejects_vague_or_placeholder_intake() {
+        let vague = intake_fixture(
+            AutonomousCodingIssueIntakeDecision::NeedsClarification,
+            "Fix it",
+            "Broken",
+            vec!["cargo test -p tau-runtime spec_3809"],
+        );
+        let vague_error = ensure_intake_run_decision(&vague).expect_err("vague refused");
+        assert!(vague_error.to_string().contains("needs_clarification"));
+
+        let placeholder = intake_fixture(
+            AutonomousCodingIssueIntakeDecision::NeedsAuthority,
+            "Fix placeholder",
+            "Issue body",
+            vec!["cargo test -p <affected-crate> <focused-test>"],
+        );
+        let placeholder_error =
+            intake_run_verifier_commands(&placeholder, &[]).expect_err("placeholder refused");
+        assert!(placeholder_error.to_string().contains("concrete"));
+    }
+
+    fn intake_fixture(
+        decision: AutonomousCodingIssueIntakeDecision,
+        title: &str,
+        body: &str,
+        verifier_commands: Vec<&str>,
+    ) -> AutonomousCodingIssueIntakeOutcome {
+        AutonomousCodingIssueIntakeOutcome {
+            schema_version: 1,
+            intake_id: "issue-3809-intake-run".to_string(),
+            status: AutonomousCodingIssueIntakeStatus::Blocked,
+            reason_code: "issue_intake_missing_edit_or_provider_authority".to_string(),
+            classification:
+                AutonomousCodingIssueIntakeClassification::MissingEditOrProviderAuthority,
+            classification_summary: "fixture".to_string(),
+            decision,
+            clarifying_questions: vec![AutonomousCodingIssueClarifyingQuestion {
+                reason_code: "mutation_authority".to_string(),
+                question: "How should Tau mutate?".to_string(),
+                required_input: "--edit or provider repair".to_string(),
+            }],
+            issue_url: "https://github.com/njfio/Tau/issues/3809".to_string(),
+            issue_title: title.to_string(),
+            issue_body: body.to_string(),
+            issue_body_summary: body.to_string(),
+            repo_path: PathBuf::from("/tmp/tau-fixture"),
+            base_branch: "master".to_string(),
+            required_authority: Vec::new(),
+            verifier_plan: AutonomousCodingVerifierPlan {
+                plan_kind: "rust".to_string(),
+                summary: "fixture verifier".to_string(),
+                suggested_verifier_commands: verifier_commands
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+                missing_inputs: Vec::new(),
+                next_action: "run intake".to_string(),
+            },
+            missing_inputs: Vec::new(),
+            next_action_summary: "run intake".to_string(),
+            created_unix_ms: 1,
+            updated_unix_ms: 1,
+        }
+    }
+
+    fn provider_repair_args_fixture() -> ProviderRepairArgs {
+        ProviderRepairArgs {
+            provider_repair_command: None,
+            provider_repair_args: Vec::new(),
+            provider_repair_attempts: 0,
+            provider_repair_provider: None,
+            provider_repair_model: None,
+            provider_repair_openrouter: false,
+            provider_repair_env_file: None,
+            provider_repair_api_base: None,
+            provider_repair_timeout_ms: 120_000,
+            provider_repair_max_tokens: 1_200,
+            provider_repair_max_retries: 1,
         }
     }
 }
