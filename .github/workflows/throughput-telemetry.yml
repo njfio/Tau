@@ -80,7 +80,7 @@ jobs:
           } >>"${GITHUB_STEP_SUMMARY}"
 
       - name: Upload telemetry artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pr-throughput-telemetry
           path: |
