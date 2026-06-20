@@ -201,7 +201,7 @@ jobs:
       - build
     steps:
       - name: Download release artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
@@ -245,14 +245,14 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
           path: dist
 
       - name: Download checksums for Homebrew formula
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: release-checksums
           path: dist
